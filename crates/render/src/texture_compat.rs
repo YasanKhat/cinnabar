@@ -94,7 +94,7 @@ impl<S: bevy::render::render_resource::Specializer<bevy::render::render_resource
                 .iter()
                 .any(|definition| match definition {
                     bevy::shader::ShaderDefVal::Bool(name, value) => {
-                        *value && gamma.contains(&name.as_str())
+                        *value && gamma.contains(&&**name)
                     }
                     _ => false,
                 });
