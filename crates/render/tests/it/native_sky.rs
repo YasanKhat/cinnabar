@@ -330,8 +330,8 @@ fn exhaustive_fan(ray: vec3<f32>) -> f32 {
     let point = ray.xz * (256.0 / 2000.0) / ray.y;
     for (var index = 0u; index < 10u; index += 1u) {
         atomicAdd(&work[1], 1u);
-        let a = SKY_RING[index];
-        let b = SKY_RING[(index + 1u) % 10u];
+        let a = sky_ring(index);
+        let b = sky_ring((index + 1u) % 10u);
         let determinant = a.x * b.y - a.y * b.x;
         let alpha = (point.x * b.y - point.y * b.x) / determinant;
         let beta = (a.x * point.y - a.y * point.x) / determinant;
@@ -346,7 +346,7 @@ fn exhaustive_fan(ray: vec3<f32>) -> f32 {
     var point = (position.xy - vec2(128.0)) / 64.0;
     let row = u32(position.y);
     if (row < 30u) {
-        let rim = SKY_RING[row % 10u];
+        let rim = sky_ring(row % 10u);
         let jitter = select(select(-0.0000001, 0.0, row < 20u), 0.0000001, row < 10u);
         point = rim * (position.x / 128.0) + vec2(jitter, -jitter);
     }

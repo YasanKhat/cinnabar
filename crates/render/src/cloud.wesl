@@ -27,7 +27,15 @@ struct NativeCloudUniform {
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<uniform> atmosphere: AtmosphereUniform;
-@group(0) @binding(2) var<storage, read> cloud_records: array<ViewportCloudQuad>;
+@group(0) @binding(2) var<storage, read> cloud_records: array<vec4<u32>>;
+
+// Raw storage preserves the 16-byte CPU record without a std430 struct block.
+fn load_cloud_records(index: u32) -> ViewportCloudQuad {
+    let base = index * 1u;
+    return ViewportCloudQuad(vec2<i32>(bitcast<i32>(cloud_records[base + 0u].x), bitcast<i32>(cloud_records[base + 0u].y)),
+        cloud_records[base + 0u].z,
+        cloud_records[base + 0u].w);
+}
 @group(0) @binding(3) var<uniform> native_cloud: NativeCloudUniform;
 
 const FACE_DOWN: u32 = CLOUD_FACE_DOWN_VALUE;
@@ -128,7 +136,7 @@ fn native_cloud_vertex_colour(record: ViewportCloudQuad, world_position: vec3<f3
 fn cloud_vertex(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let quad_index = vertex_index / 6u;
     let corner_index = vertex_index % 6u;
-    let record = cloud_records[quad_index];
+    let record = load_cloud_records(quad_index);
     let world_position = reconstruct_world_position(record, face_corner_uv(record.face, corner_index));
     return VertexOutput(
         view.clip_from_world * vec4(world_position, 1.0),

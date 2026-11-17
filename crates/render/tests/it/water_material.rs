@@ -194,17 +194,16 @@ const WITNESS: &str = r#"
     let uv = vec2(f32((index << 1u) & 2u), f32(index & 2u));
     let raster_uv = select(uv, uv.yx, witness_case[2].w != 0.0);
     out.clip_position = vec4(raster_uv * 2.0 - vec2(1.0), 0.5, 1.0);
-    out.uv = uv;
-    out.textures.x = 0u;
-    out.textures.y = 1u;
-    out.frame_blend = witness_case[1].w;
+    out.uv_aux = vec4(uv, out.uv_aux.zw);
+    out.textures_meta.x = 0u;
+    out.textures_meta.y = 1u;
+    out.frame_meta.x = bitcast<u32>(witness_case[1].w);
     out.water_tint = tint_to_linear(witness_case[0]);
     out.water_tint.a = liquid_vertex_alpha(out.water_tint.a, witness_case[2].x, atmosphere.liquid_distance.x);
-    out.lighting = world_lightmap.raw[0].rgb;
-    out.native_light_levels = vec2(0.0);
-    out.native_face_shade = witness_case[2].y;
-    out.depth_write_route = 0u;
-    out.two_sided = u32(witness_case[2].z);
+    out.uv_aux = vec4(out.uv_aux.xy, vec2(0.0));
+    out.frame_meta.y = bitcast<u32>(witness_case[2].y);
+    out.textures_meta.w = 0u;
+    out.textures_meta.z = u32(witness_case[2].z);
     out.world_position = vec3(witness_case[2].x, 0.0, 0.0);
     return out;
 }

@@ -778,21 +778,21 @@ fn seam_corner(index: u32) -> u32 {
 /// Draws sealed vertices with a unique identifier for each quad.
 @vertex fn seam_id_vertex(@builtin(vertex_index) index: u32) -> VertexOutput {
     var out = cube_vertex(seam_corner(index), index / 6u);
-    out.biome_record = index / 6u + 1u;
+    out.biome_meta.x = index / 6u + 1u;
     return out;
 }
 
 /// Draws unsealed vertices with a unique identifier for each quad.
 @vertex fn unsealed_id_vertex(@builtin(vertex_index) index: u32) -> VertexOutput {
     var out = sealed_cube_vertex(seam_corner(index), index / 6u, 0.0);
-    out.biome_record = index / 6u + 1u;
+    out.biome_meta.x = index / 6u + 1u;
     return out;
 }
 
 // Shades as usual so the bindings match, then reports the quad id instead.
 /// Encodes the quad identifier in pixels while retaining the color shader as a witness.
 @fragment fn quad_id_fragment(in: FragmentInput) -> @location(0) vec4<f32> {
-    let colour = shade_cube(in, sample_cube_texture(in, dpdx(in.uv), dpdy(in.uv)));
-    return select(unpack4x8unorm(in.biome_record | 0xff000000u), colour, colour.a < -1.0);
+    let colour = shade_cube(in, sample_cube_texture(in, dpdx(in.uv_aux.xy), dpdy(in.uv_aux.xy)));
+    return select(unpack4x8unorm(in.biome_meta.x | 0xff000000u), colour, colour.a < -1.0);
 }
 "#;

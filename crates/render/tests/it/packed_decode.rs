@@ -654,7 +654,7 @@ const MODEL_WITNESS: &str = r#"
         if (quad.valid != 0u) {
             let flags = vertex.visibility.x;
             let two_sided = select(0u, 1u, (flags & MODEL_TWO_SIDED) != 0u);
-            results[3u + corner] = vec4(flags & ~MODEL_TWO_SIDED, two_sided, vertex.biome_record, 0u);
+            results[3u + corner] = vec4(flags & ~MODEL_TWO_SIDED, two_sided, u32(quad.chunk_origin.w), 0u);
         }
         else { results[3u + corner] = bitcast<vec4<u32>>(vertex.clip_position); }
     }
@@ -664,7 +664,7 @@ const MODEL_WITNESS: &str = r#"
 const MODEL_SHADE_WITNESS: &str = r#"
 @compute @workgroup_size(1) fn witness(@builtin(global_invocation_id) id: vec3<u32>) {
     let vertex = model_vertex(0u, id.x);
-    results[id.x] = vec4(bitcast<u32>(vertex.native_ao_face), vertex.visibility.x & MODEL_VISIBLE, 0u, 0u);
+    results[id.x] = vec4(bitcast<u32>(vertex.world_ao.w), vertex.visibility.x & MODEL_VISIBLE, 0u, 0u);
 }
 "#;
 
@@ -672,7 +672,7 @@ const MODEL_PATCH_SHADE_WITNESS: &str = r#"
 /// Reads whole and cropped vertices through the production lighting path.
 @compute @workgroup_size(1) fn witness(@builtin(global_invocation_id) id: vec3<u32>) {
     let vertex = model_vertex(id.x % 4u, id.x / 4u);
-    results[id.x] = bitcast<vec4<u32>>(vec4(vertex.lighting, vertex.native_ao_face));
+    results[id.x] = bitcast<vec4<u32>>(vec4(vec3(vertex.world_ao.w), vertex.world_ao.w));
 }
 "#;
 
@@ -685,7 +685,7 @@ const LIQUID_WITNESS: &str = r#"
     let base = id.x * 4u;
     results[base] = vec4(decoded.block_coordinate, decoded.selected_material_id);
     results[base + 1u] = bitcast<vec4<u32>>(decoded.chunk_origin);
-    results[base + 2u] = vec4(decoded.light_sample, vertex.depth_write_route, vertex.two_sided, 0u);
+    results[base + 2u] = vec4(decoded.light_sample, vertex.textures_meta.w, vertex.textures_meta.z, 0u);
     results[base + 3u] = bitcast<vec4<u32>>(vertex.water_tint);
 }
 "#;

@@ -115,6 +115,15 @@ fn selection_endpoint(index: u32) -> vec4<f32> {
     return clip;
 }
 
+fn selection_corner(index: u32) -> u32 {
+    switch index {
+        case 0u, 3u: { return 0u; }
+        case 1u: { return 1u; }
+        case 2u, 4u: { return 2u; }
+        default: { return 3u; }
+    }
+}
+
 @vertex
 fn selection_line_vertex(@builtin(vertex_index) vertex_index: u32) -> SelectionLineOutput {
     let first = vertex_index / BLOCK_SELECTION_VERTICES_PER_EDGE * 2u;
@@ -139,7 +148,7 @@ fn selection_line_vertex(@builtin(vertex_index) vertex_index: u32) -> SelectionL
         return out;
     }
     let perpendicular = vec2(-direction.y, direction.x) * inverseSqrt(length_squared);
-    let corner = array(0u, 1u, 2u, 0u, 2u, 3u)[vertex_index % BLOCK_SELECTION_VERTICES_PER_EDGE];
+    let corner = selection_corner(vertex_index % BLOCK_SELECTION_VERTICES_PER_EDGE);
     var endpoint = select(a, b, corner == 1u || corner == 2u);
     let sign = select(-1.0, 1.0, corner >= 2u);
     endpoint = vec4(endpoint.xy + perpendicular * sign * SELECTION_STROKE_PIXELS / view.viewport.zw * endpoint.w, endpoint.zw);

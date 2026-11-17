@@ -103,10 +103,9 @@ impl FromWorld for Pipelines {
                     descriptor,
                 )
             }),
-            supported: world.get_resource::<RenderDevice>().is_some_and(|device| {
-                device.limits().max_storage_buffers_per_shader_stage
-                    >= required_vertex_storage_buffers()
-            }),
+            supported: world
+                .get_resource::<RenderDevice>()
+                .is_some_and(|device| !super::pipeline::layouts::uses_compact_terrain(device)),
         }
     }
 }

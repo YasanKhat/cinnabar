@@ -18,8 +18,8 @@ impl LiquidShaderContract {
     pub fn parse(shader: &str) -> Self {
         validate_structural_wiring(shader);
         Self {
-            face_xz: parse_vec2_table(shader, "LIQUID_FACE_XZ"),
-            base_uv: parse_vec2_table(shader, "LIQUID_BASE_UV"),
+            face_xz: parse_bitmask_table(shader, "liquid_face_xz"),
+            base_uv: parse_bitmask_table(shader, "liquid_base_uv"),
             flow_angle_direction: parse_f32(shader, "FLOW_ANGLE_DIRECTION"),
             flow_angle_offset: parse_f32(shader, "FLOW_ANGLE_OFFSET"),
             side_height_bias: parse_f32(shader, "SIDE_HEIGHT_BIAS"),
@@ -139,12 +139,12 @@ fn validate_structural_wiring(shader: &str) {
     let shader = compact(shader);
     let requirements = [
         (
-            "LIQUID_FACE_XZ[face*4u+corner]",
+            "liquid_face_xz(face*4u+corner)",
             "face/corner geometry-table addressing",
             1,
         ),
         (
-            "LIQUID_BASE_UV[face*4u+corner]",
+            "liquid_base_uv(face*4u+corner)",
             "face/corner UV-table addressing",
             1,
         ),
@@ -222,37 +222,22 @@ fn parse_side_scale_operator(shader: &str) -> f32 {
     }
 }
 
-fn parse_vec2_table(shader: &str, name: &str) -> [[f32; 2]; 24] {
-    let prefix = format!("const {name}: array<vec2<f32>, 24> = array(");
+fn parse_bitmask_table(shader: &str, name: &str) -> [[f32; 2]; 24] {
     let start = shader
-        .find(&prefix)
-        .unwrap_or_else(|| panic!("liquid shader is missing {name}"))
-        + prefix.len();
-    let end = shader[start..]
-        .find(");")
-        .map(|offset| start + offset)
-        .expect("shader table must end with );");
-    let mut values = Vec::new();
-    let mut remaining = &shader[start..end];
-    while let Some(vector) = remaining.find("vec2(") {
-        remaining = &remaining[vector + "vec2(".len()..];
-        let close = remaining.find(')').expect("vec2 literal must close");
-        let components = remaining[..close]
-            .split(',')
-            .map(str::trim)
-            .map(|component| {
-                component
-                    .parse::<f32>()
-                    .expect("vec2 component must be literal")
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(components.len(), 2, "vec2 literal must have two components");
-        values.push([components[0], components[1]]);
-        remaining = &remaining[close + 1..];
-    }
-    values.try_into().unwrap_or_else(|values: Vec<_>| {
-        panic!("{name} must contain 24 vec2 values, got {}", values.len())
-    })
+        .find(&format!("fn {name}(index:"))
+        .expect("corner helper exists");
+    let body = &shader[start..][..shader[start..].find('}').expect("helper closes")];
+    let masks = body
+        .split("0x")
+        .skip(1)
+        .map(|suffix| {
+            let end = suffix.find('u').expect("mask has u suffix");
+            u32::from_str_radix(&suffix[..end], 16).expect("literal corner mask")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(masks.len(), 2);
+    assert_eq!(compact(body).matches("u>>index)&1u").count(), 2);
+    std::array::from_fn(|index| std::array::from_fn(|axis| ((masks[axis] >> index) & 1) as f32))
 }
 
 #[cfg(test)]
@@ -304,12 +289,12 @@ mod tests {
     #[test]
     fn decoder_rejects_shader_address_mask_height_and_flow_wiring_mutations() {
         assert_rejects_mutation(
-            "LIQUID_FACE_XZ[face * 4u + corner]",
-            "LIQUID_FACE_XZ[corner * 4u + face]",
+            "liquid_face_xz(face * 4u + corner)",
+            "liquid_face_xz(corner * 4u + face)",
         );
         assert_rejects_mutation(
-            "LIQUID_BASE_UV[face * 4u + corner]",
-            "LIQUID_BASE_UV[corner * 4u + face]",
+            "liquid_base_uv(face * 4u + corner)",
+            "liquid_base_uv(corner * 4u + face)",
         );
         assert_rejects_mutation("SIDE_FACE_MASK >> face", "SIDE_FACE_MASK >> corner");
         assert_rejects_mutation("face == FLOW_FACE", "face != FLOW_FACE");

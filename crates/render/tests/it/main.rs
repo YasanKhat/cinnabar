@@ -8,6 +8,8 @@
 mod chunk_constants;
 #[path = "../../src/mod_render/retained/clip_shader.rs"]
 mod clip_shader;
+#[path = "support/desktop_gl.rs"]
+mod desktop_gl;
 #[path = "support/gpu_snapshot.rs"]
 mod gpu_snapshot;
 #[path = "../../src/hand_rig_render/bindings.rs"]

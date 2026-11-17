@@ -18,6 +18,12 @@ pub fn required_vertex_storage_buffers() -> u32 {
     vertex_storage_buffers(&chunk_bind_group_layout())
 }
 
+/// GL also needs the compact path: fewer SSBO blocks avoid Gen7.5 linker pressure.
+pub(in crate::chunk) fn uses_compact_terrain(device: &RenderDevice) -> bool {
+    device.limits().max_storage_buffers_per_shader_stage < required_vertex_storage_buffers()
+        || device.wgpu_device().adapter_info().backend == wgpu::Backend::Gl
+}
+
 /// Minimum storage slots used by the compact terrain layout.
 pub fn minimum_vertex_storage_buffers() -> u32 {
     vertex_storage_buffers(&compact_chunk_bind_group_layout())
@@ -60,9 +66,9 @@ pub(crate) struct ChunkPipeline {
 
 impl FromWorld for ChunkPipeline {
     fn from_world(world: &mut World) -> Self {
-        let compact = world.get_resource::<RenderDevice>().is_some_and(|device| {
-            device.limits().max_storage_buffers_per_shader_stage < required_vertex_storage_buffers()
-        });
+        let compact = world
+            .get_resource::<RenderDevice>()
+            .is_some_and(uses_compact_terrain);
         let [
             descriptor,
             solid_descriptor,

@@ -99,6 +99,10 @@ fn model_tints_use_the_block_position_for_every_vertex() {
     let source = shader("model.wesl");
     assert!(source.contains("out.local_position = block_position;"));
     assert!(source.contains("@interpolate(flat) local_position"));
+    // Enhanced keeps the flat block coordinate; native computes tint at that
+    // same block coordinate before interpolation instead of carrying it.
+    assert!(source.contains("@if(ENHANCED)\n    out.local_position = block_position;"));
+    assert!(source.contains("out.tint_gamma = blended_biome_tint_gamma(tint_kind, material.flags, u32(quad.chunk_origin.w), block_position, vec3<f32>(quad.chunk_origin.xyz)).rgb;"));
 }
 
 #[test]

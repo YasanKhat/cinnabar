@@ -14,7 +14,17 @@ struct PrimitiveFrame {
 }
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(0) @binding(1) var<storage, read> vertices: array<ModVertex>;
+@group(0) @binding(1) var<storage, read> vertices: array<vec4<f32>>;
+
+// Raw storage preserves the 80-byte CPU record without a std430 struct block.
+fn load_vertices(index: u32) -> ModVertex {
+    let base = index * 5u;
+    return ModVertex(vec4<f32>(vertices[base + 0u].x, vertices[base + 0u].y, vertices[base + 0u].z, vertices[base + 0u].w),
+        vec4<f32>(vertices[base + 1u].x, vertices[base + 1u].y, vertices[base + 1u].z, vertices[base + 1u].w),
+        vec4<f32>(vertices[base + 2u].x, vertices[base + 2u].y, vertices[base + 2u].z, vertices[base + 2u].w),
+        vec4<f32>(vertices[base + 3u].x, vertices[base + 3u].y, vertices[base + 3u].z, vertices[base + 3u].w),
+        vec4<f32>(vertices[base + 4u].x, vertices[base + 4u].y, vertices[base + 4u].z, vertices[base + 4u].w));
+}
 @group(0) @binding(2) var<uniform> primitive_frame: PrimitiveFrame;
 
 struct VertexOutput {
@@ -28,7 +38,7 @@ const TAU: f32 = 6.2831853;
 
 @vertex
 fn mod_primitive_vertex(@builtin(vertex_index) index: u32) -> VertexOutput {
-    let v = vertices[index];
+    let v = load_vertices(index);
     let anchor = v.anchor.xyz;
     let kind = u32(v.anchor.w + 0.5);
     let to_eye = view.world_position - anchor;

@@ -8,7 +8,16 @@ struct Ribbon {
 }
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(0) @binding(1) var<storage, read> ribbons: array<Ribbon>;
+@group(0) @binding(1) var<storage, read> ribbons: array<vec4<f32>>;
+
+// Raw storage preserves the 32-byte CPU record without a std430 struct block.
+fn load_ribbons(index: u32) -> Ribbon {
+    let base = index * 2u;
+    return Ribbon(vec3<f32>(ribbons[base + 0u].x, ribbons[base + 0u].y, ribbons[base + 0u].z),
+        ribbons[base + 0u].w,
+        vec3<f32>(ribbons[base + 1u].x, ribbons[base + 1u].y, ribbons[base + 1u].z),
+        ribbons[base + 1u].w);
+}
 
 // Provisional bolt tint; needs native calibration.
 const BOLT_COLOUR: vec3<f32> = vec3(0.85, 0.9, 1.0);
@@ -32,7 +41,7 @@ fn corner_uv(corner_index: u32) -> vec2<f32> {
 
 @vertex
 fn lightning_vertex(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-    let ribbon = ribbons[vertex_index / 6u];
+    let ribbon = load_ribbons(vertex_index / 6u);
     let corner = corner_uv(vertex_index % 6u);
     let axis = ribbon.end - ribbon.start;
     let to_camera = view.world_position - (ribbon.start + ribbon.end) * 0.5;

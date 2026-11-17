@@ -165,11 +165,11 @@ fn overlay_depth(in: Fullscreen) -> @builtin(frag_depth) f32 {
 
 // `centerDepthSmooth`: the smoothed centre depth, and the share of the gap to this frame's
 // sample it closes (Iris's `1 - exp(-decay * lastFrameTime)`).
-@group(0) @binding(5) var<storage, read_write> center_depth: f32;
+@group(0) @binding(5) var<storage, read_write> center_depth: array<f32>;
 @group(0) @binding(6) var<uniform> center_depth_share: vec4<f32>;
 
 fn smooth_center_depth(depth: f32) {
-    center_depth = mix(center_depth, depth, center_depth_share.x);
+    center_depth[0] = mix(center_depth[0], depth, center_depth_share.x);
 }
 
 // The geometry depth's centre texel, which Iris reads at `vec2(0.5)` with nearest filtering.

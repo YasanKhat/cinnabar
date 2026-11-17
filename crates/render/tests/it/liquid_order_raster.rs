@@ -271,16 +271,15 @@ const WITNESS: &str = r#"
     var out: VertexOutput;
     out.clip_position = view.clip_from_world * vec4(world, 1.0);
     out.world_position = world;
-    out.uv = vec2(0.5);
-    out.textures.x = 0u;
-    out.textures.y = 0u;
-    out.frame_blend = 0.0;
+    out.uv_aux = vec4(vec2(0.5), out.uv_aux.zw);
+    out.textures_meta.x = 0u;
+    out.textures_meta.y = 0u;
+    out.frame_meta.x = bitcast<u32>(0.0);
     out.water_tint = vec4(0.2 + 0.6 * shade, 0.9 - 0.6 * shade, 0.5, 0.5);
-    out.lighting = vec3(1.0);
-    out.native_light_levels = vec2(0.0);
-    out.native_face_shade = 1.0;
-    out.depth_write_route = 0u;
-    out.two_sided = 1u;
+    out.uv_aux = vec4(out.uv_aux.xy, vec2(0.0));
+    out.frame_meta.y = bitcast<u32>(1.0);
+    out.textures_meta.w = 0u;
+    out.textures_meta.z = 1u;
     return out;
 }
 "#;

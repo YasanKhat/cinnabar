@@ -18,47 +18,29 @@ import render::enhanced::view::{sky_illumination, material_class, shade_surface,
 
 struct FragmentInput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-    // Current and next animation frames share one flat slot.
-    @location(1) @interpolate(flat) textures: vec2<u32>,
-    @location(3) @interpolate(flat) frame_blend: f32,
-    @location(4) water_tint: vec4<f32>,
+    @location(0) uv_aux: vec4<f32>,
+    @location(1) @interpolate(flat) textures_meta: vec4<u32>,
+    @location(2) @interpolate(flat) frame_meta: vec3<u32>,
+    @location(3) water_tint: vec4<f32>,
+    @location(4) world_position: vec3<f32>,
+    @if(ENHANCED)
     @location(5) lighting: vec3<f32>,
     @if(ENHANCED)
-    @location(6) sky_light: f32,
-    @if(ENHANCED)
-    @location(7) ambient_occlusion: f32,
-    @location(8) @interpolate(flat) depth_write_route: u32,
-    @location(9) world_position: vec3<f32>,
-    @location(12) native_light_levels: vec2<f32>,
-    @location(13) @interpolate(flat) native_face_shade: f32,
-    @location(2) @interpolate(flat) two_sided: u32,
-    @if(ENHANCED)
-    @location(10) normal: vec3<f32>,
-    @if(ENHANCED)
-    @location(11) @interpolate(flat) surface_class: u32,
+    @location(6) normal: vec3<f32>,
 }
 
 struct FrameSample { current: u32, next: u32, blend: f32 }
 
-// These literal tables are the GPU half of the packed-liquid stream contract.
+// These coordinate masks are the GPU half of the packed-liquid stream contract.
 // Four entries per face in Face's numeric order, then packed corner order.
-const LIQUID_FACE_XZ: array<vec2<f32>, 24> = array(
-    vec2(0.0, 0.0), vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(0.0, 1.0),
-    vec2(1.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0), vec2(1.0, 0.0),
-    vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
-    vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0),
-    vec2(1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 0.0), vec2(0.0, 0.0),
-    vec2(0.0, 1.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 1.0),
-);
-const LIQUID_BASE_UV: array<vec2<f32>, 24> = array(
-    vec2(0.0, 0.0), vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 0.0),
-    vec2(0.0, 0.0), vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 0.0),
-    vec2(0.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
-    vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0),
-    vec2(0.0, 0.0), vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 0.0),
-    vec2(0.0, 0.0), vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 0.0),
-);
+// Exact binary corner coordinates, without an indexed per-invocation array.
+fn liquid_face_xz(index: u32) -> vec2<f32> {
+    return vec2(f32((0xc36cf0u >> index) & 1u), f32((0xf0c63cu >> index) & 1u));
+}
+// Exact binary corner coordinates, without an indexed per-invocation array.
+fn liquid_base_uv(index: u32) -> vec2<f32> {
+    return vec2(f32((0xcc6cccu >> index) & 1u), f32((0x00c600u >> index) & 1u));
+}
 // Native angle and UVs, expressed in our NW/NE/SE/SW order.
 const FLOW_ANGLE_DIRECTION: f32 = -1.0;
 const FLOW_ANGLE_OFFSET: f32 = 1.5707963267948966;
@@ -70,25 +52,15 @@ const LIQUID_MATERIAL_MASK: u32 = ~(LIQUID_DEPTH_WRITE_BIT | LIQUID_TOP_INSET_BI
 
 struct VertexOutput {
     @builtin(position) @invariant clip_position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-    // Current and next animation frames share one flat slot.
-    @location(1) @interpolate(flat) textures: vec2<u32>,
-    @location(3) @interpolate(flat) frame_blend: f32,
-    @location(4) water_tint: vec4<f32>,
+    @location(0) uv_aux: vec4<f32>,
+    @location(1) @interpolate(flat) textures_meta: vec4<u32>,
+    @location(2) @interpolate(flat) frame_meta: vec3<u32>,
+    @location(3) water_tint: vec4<f32>,
+    @location(4) world_position: vec3<f32>,
+    @if(ENHANCED)
     @location(5) lighting: vec3<f32>,
     @if(ENHANCED)
-    @location(6) sky_light: f32,
-    @if(ENHANCED)
-    @location(7) ambient_occlusion: f32,
-    @location(8) @interpolate(flat) depth_write_route: u32,
-    @location(9) world_position: vec3<f32>,
-    @location(12) native_light_levels: vec2<f32>,
-    @location(13) @interpolate(flat) native_face_shade: f32,
-    @location(2) @interpolate(flat) two_sided: u32,
-    @if(ENHANCED)
-    @location(10) normal: vec3<f32>,
-    @if(ENHANCED)
-    @location(11) @interpolate(flat) surface_class: u32,
+    @location(6) normal: vec3<f32>,
 }
 
 fn animation_sample(material: MaterialGpu) -> FrameSample {
@@ -125,7 +97,7 @@ fn liquid_corner(geometry: u32, height_word: u32, corner: u32, packed_material: 
         f32((geometry >> 8u) & 15u),
     );
     var height = f32((height_word >> (corner * 8u)) & 255u) / 255.0;
-    var xz = LIQUID_FACE_XZ[face * 4u + corner];
+    var xz = liquid_face_xz(face * 4u + corner);
     // Vanilla lowers exposed tops in-place; side upper vertices reuse them.
     // Covered tops retain their heights. The ordinary bottom face is untouched.
     if ((packed_material & LIQUID_TOP_INSET_BIT) != 0u && face != 2u && (face == 3u || corner == 1u || corner == 2u)) {
@@ -159,7 +131,7 @@ fn liquid_uv(
     flow_x: i32,
     flow_z: i32,
 ) -> vec2<f32> {
-    var uv = LIQUID_BASE_UV[face * 4u + corner];
+    var uv = liquid_base_uv(face * 4u + corner);
     if (((SIDE_FACE_MASK >> face) & 1u) != 0u) {
         uv.y = SIDE_HEIGHT_BIAS + SIDE_HEIGHT_SCALE * height;
     }
@@ -311,10 +283,10 @@ fn vertex_for_record(record_index: u32, vertex_index: u32) -> VertexOutput {
 
     var out: VertexOutput;
     out.clip_position = camera_offset_clip(view.clip_from_world, view.world_position, camera_offset);
-    out.uv = decoded.uv;
-    out.textures.x = frame.current;
-    out.textures.y = frame.next;
-    out.frame_blend = frame.blend;
+    out.uv_aux = vec4(decoded.uv, out.uv_aux.zw);
+    out.textures_meta.x = frame.current;
+    out.textures_meta.y = frame.next;
+    out.frame_meta.x = bitcast<u32>(frame.blend);
     out.water_tint = blended_biome_tint(
         0x30u,
         0u,
@@ -324,22 +296,24 @@ fn vertex_for_record(record_index: u32, vertex_index: u32) -> VertexOutput {
     );
     @if(!ENHANCED)
     out.water_tint.a = liquid_vertex_alpha(out.water_tint.a, distance(world_position, view.world_position), atmosphere.liquid_distance.x);
+    @if(ENHANCED)
     out.lighting = light_colour(light_sample) * light_ao_factor((light_sample >> 8u) & 7u) * face_shade(face_normal(face), (light_sample & 2048u) != 0u);
-    out.native_light_levels = terrain_light_levels(light_sample);
-    out.native_face_shade = face_shade(face_normal(face), (light_sample & 2048u) != 0u);
+    @if(!ENHANCED)
+    out.uv_aux = vec4(out.uv_aux.xy, terrain_light_levels(light_sample));
+    out.frame_meta.y = bitcast<u32>(face_shade(face_normal(face), (light_sample & 2048u) != 0u));
     @if(ENHANCED)
-    out.sky_light = sky_illumination(light_sample);
+    out.uv_aux.z = sky_illumination(light_sample);
     @if(ENHANCED)
-    out.ambient_occlusion = light_ao_factor((light_sample >> 8u) & 7u);
-    out.depth_write_route = packed_material >> 31u;
-    out.two_sided = u32((packed_material & LIQUID_TWO_SIDED_BIT) != 0u);
+    out.uv_aux.w = light_ao_factor((light_sample >> 8u) & 7u);
+    out.textures_meta.w = packed_material >> 31u;
+    out.textures_meta.z = u32((packed_material & LIQUID_TWO_SIDED_BIT) != 0u);
     out.world_position = world_position;
     @if(ENHANCED)
     out.normal = face_normal(face);
     @if(ENHANCED)
-    out.surface_class = material_class(packed_material & LIQUID_MATERIAL_MASK);
+    out.frame_meta.z = material_class(packed_material & LIQUID_MATERIAL_MASK);
     @if(ENHANCED)
-    if ((out.surface_class & CLASS_WATER) != 0u) {
+    if ((out.frame_meta.z & CLASS_WATER) != 0u) {
         out.world_position = waved_water_position(world_position, out.normal.y > 0.5
             || (abs(out.normal.y) < 0.5 && local_position.y > f32(block_coordinate.y)));
         out.clip_position = camera_offset_clip(
@@ -416,8 +390,8 @@ sampled_gamma: vec3<f32>, @if(!ENHANCED)
 tint_linear: vec3<f32>, @if(!ENHANCED)
 in: FragmentInput) -> vec3<f32> {
     let tint_gamma = tint_to_gamma(vec4(tint_linear, 1.0)).rgb;
-    let face_tint = floor(clamp(tint_gamma * in.native_face_shade, vec3(0.0), vec3(1.0)) * 255.0 + vec3(0.0001)) / 255.0;
-    let base_gamma = sampled_gamma * face_tint * point_lit_terrain_light_colour(in.native_light_levels, in.world_position);
+    let face_tint = floor(clamp(tint_gamma * bitcast<f32>(in.frame_meta.y), vec3(0.0), vec3(1.0)) * 255.0 + vec3(0.0001)) / 255.0;
+    let base_gamma = sampled_gamma * face_tint * point_lit_terrain_light_colour(in.uv_aux.zw, in.world_position);
     let fog_gamma = tint_to_gamma(vec4(atmosphere.fog_color_start.rgb, 1.0)).rgb;
     let distance_to_camera = distance(in.world_position, view.world_position);
     let fog = clamp((distance_to_camera - atmosphere.fog_color_start.w) / max(atmosphere.fog_end_time.x - atmosphere.fog_color_start.w, 0.0001), 0.0, 1.0);
@@ -426,27 +400,27 @@ in: FragmentInput) -> vec3<f32> {
 
 @fragment
 fn fragment(in: FragmentInput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
-    return shade_liquid(in, front_facing, dpdx(in.uv), dpdy(in.uv));
+    return shade_liquid(in, front_facing, dpdx(in.uv_aux.xy), dpdy(in.uv_aux.xy));
 }
 
 // Ordinary transparent liquid colour; `front_facing` follows the packed clockwise winding and
 // `dx`/`dy` are the UV derivatives, taken by the caller in uniform control flow.
 fn shade_liquid(in: FragmentInput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
-    if (in.depth_write_route != 0u) { discard; }
+    if (in.textures_meta.w != 0u) { discard; }
     // Vanilla duplicates only faces marked by the liquid tessellator.
     // In particular, the bottom never has a reverse face at the ice surface.
-    if (!front_facing && in.two_sided == 0u) { discard; }
-    let current_sample = sample_texture_ref(in.textures.x, in.uv, dx, dy);
+    if (!front_facing && in.textures_meta.z == 0u) { discard; }
+    let current_sample = sample_texture_ref(in.textures_meta.x, in.uv_aux.xy, dx, dy);
     var sampled = current_sample;
-    if (in.frame_blend > 0.0) {
-        let next_sample = sample_texture_ref(in.textures.y, in.uv, dx, dy);
-        sampled = mix(current_sample, next_sample, in.frame_blend);
+    if (bitcast<f32>(in.frame_meta.x) > 0.0) {
+        let next_sample = sample_texture_ref(in.textures_meta.y, in.uv_aux.xy, dx, dy);
+        sampled = mix(current_sample, next_sample, bitcast<f32>(in.frame_meta.x));
     }
     @if(ENHANCED)
-    if ((in.surface_class & CLASS_WATER) != 0u) {
+    if ((in.frame_meta.z & CLASS_WATER) != 0u) {
         let water = shade_water(sampled.rgb * in.water_tint.rgb, sampled.a * in.water_tint.a, in.normal,
-            in.world_position, in.clip_position, in.lighting, in.sky_light,
-            in.ambient_occlusion, atmosphere.sky_zenith_rain.rgb, atmosphere.sky_horizon_thunder.rgb);
+            in.world_position, in.clip_position, in.lighting, in.uv_aux.z,
+            in.uv_aux.w, atmosphere.sky_zenith_rain.rgb, atmosphere.sky_horizon_thunder.rgb);
         return vec4(apply_distance_fog(water.rgb, in.world_position), water.a);
     }
     @if(ENHANCED)
@@ -456,9 +430,9 @@ fn shade_liquid(in: FragmentInput, front_facing: bool, dx: vec2<f32>, dy: vec2<f
         in.world_position,
         in.clip_position.xy,
         in.lighting,
-        in.sky_light,
-        in.ambient_occlusion,
-        in.surface_class,
+        in.uv_aux.z,
+        in.uv_aux.w,
+        in.frame_meta.z,
     );
     // The background is fogged by the same transfer, so preserving source
     // alpha composes to one fog application instead of double-counting it.
@@ -472,15 +446,15 @@ fn shade_liquid(in: FragmentInput, front_facing: bool, dx: vec2<f32>, dy: vec2<f
 
 @fragment
 fn fragment_depth(in: FragmentInput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
-    if (in.depth_write_route == 0u) { discard; }
-    if (!front_facing && in.two_sided == 0u) { discard; }
-    let dx = dpdx(in.uv);
-    let dy = dpdy(in.uv);
-    let current_sample = sample_texture_ref(in.textures.x, in.uv, dx, dy);
+    if (in.textures_meta.w == 0u) { discard; }
+    if (!front_facing && in.textures_meta.z == 0u) { discard; }
+    let dx = dpdx(in.uv_aux.xy);
+    let dy = dpdy(in.uv_aux.xy);
+    let current_sample = sample_texture_ref(in.textures_meta.x, in.uv_aux.xy, dx, dy);
     var sampled = current_sample;
-    if (in.frame_blend > 0.0) {
-        let next_sample = sample_texture_ref(in.textures.y, in.uv, dx, dy);
-        sampled = mix(current_sample, next_sample, in.frame_blend);
+    if (bitcast<f32>(in.frame_meta.x) > 0.0) {
+        let next_sample = sample_texture_ref(in.textures_meta.y, in.uv_aux.xy, dx, dy);
+        sampled = mix(current_sample, next_sample, bitcast<f32>(in.frame_meta.x));
     }
     @if(ENHANCED)
     let lit = shade_surface(
@@ -489,9 +463,9 @@ fn fragment_depth(in: FragmentInput, @builtin(front_facing) front_facing: bool) 
         in.world_position,
         in.clip_position.xy,
         in.lighting,
-        in.sky_light,
-        in.ambient_occlusion,
-        in.surface_class,
+        in.uv_aux.z,
+        in.uv_aux.w,
+        in.frame_meta.z,
     );
     @if(ENHANCED)
     return vec4(apply_distance_fog(lit, in.world_position), 1.0);

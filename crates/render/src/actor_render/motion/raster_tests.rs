@@ -12,7 +12,7 @@ const VELOCITY_SCALE: f32 = 32.0;
 fn velocity_shader() -> String {
     format!(
         r#"{}
-@fragment fn velocity_witness(input: VertexOutput) -> @location(0) vec4<f32> {{
+@fragment fn velocity_witness(input: FragmentInput) -> @location(0) vec4<f32> {{
     return vec4(actor_motion_velocity(input) * {VELOCITY_SCALE} + vec2(0.5), 1.0, 1.0);
 }}
 "#,

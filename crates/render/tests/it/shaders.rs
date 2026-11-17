@@ -384,6 +384,7 @@ fn render_fragment_interfaces_fit_fifteen_slots_including_builtins() {
         &["PACKED_TERRAIN"][..],
         &["PACKED_TERRAIN", "ALPHA_TO_COVERAGE"][..],
         &["ENHANCED"][..],
+        &["PACKED_TERRAIN", "ENHANCED"][..],
         &["ENHANCED", "ALPHA_TO_COVERAGE"][..],
         &["ENHANCED_SHADOW"][..],
     ] {
@@ -515,6 +516,7 @@ fn gles_terrain_programs_use_one_sampler_per_image() {
         &["PACKED_TERRAIN"][..],
         &["PACKED_TERRAIN", "ALPHA_TO_COVERAGE"][..],
         &["ENHANCED"][..],
+        &["PACKED_TERRAIN", "ENHANCED"][..],
         &["ENHANCED", "ALPHA_TO_COVERAGE"][..],
         &["ENHANCED_SHADOW"][..],
     ] {
@@ -557,195 +559,7 @@ fn ui_software_bilinear_preserves_the_single_sampler_contract() {
     }
 }
 
-/// Exercise the pinned desktop backend, not merely WGSL parsing. GL has independent
-/// binding namespaces; allocating within each class mirrors wgpu-hal's GLES remap.
-fn assert_desktop_430(source: &str, label: &str) {
-    use naga::{AddressSpace, ScalarKind, TypeInner};
-    let module = naga::front::wgsl::parse_str(source)
-        .unwrap_or_else(|error| panic!("{label}: {}", error.emit_to_string(source)));
-    let info = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::all(),
-    )
-    .validate(&module)
-    .unwrap_or_else(|error| panic!("{label}: {error:?}"));
-    let inspect = |function: &naga::Function, types: &naga::valid::FunctionInfo| {
-        for (handle, expression) in function.expressions.iter() {
-            match *expression {
-                naga::Expression::Select { condition, .. } => {
-                    let vector_condition = matches!(
-                        types[condition].ty.inner_with(&module.types),
-                        TypeInner::Vector { .. }
-                    );
-                    let integer_result = matches!(
-                        types[handle].ty.inner_with(&module.types),
-                        TypeInner::Vector {
-                            scalar: naga::Scalar {
-                                kind: ScalarKind::Sint | ScalarKind::Uint | ScalarKind::Bool,
-                                ..
-                            },
-                            ..
-                        }
-                    );
-                    assert!(
-                        !(vector_condition && integer_result),
-                        "{label}: pre-450 integer/bool vector mix: {expression:?}"
-                    );
-                }
-                naga::Expression::Math {
-                    fun: naga::MathFunction::CountLeadingZeros,
-                    arg,
-                    ..
-                } => {
-                    assert!(
-                        !matches!(
-                            types[arg].ty.inner_with(&module.types),
-                            TypeInner::Vector {
-                                scalar: naga::Scalar {
-                                    kind: ScalarKind::Sint,
-                                    ..
-                                },
-                                ..
-                            }
-                        ),
-                        "{label}: signed-vector countLeadingZeros"
-                    );
-                }
-                _ => {}
-            }
-        }
-    };
-    for (handle, function) in module.functions.iter() {
-        inspect(function, &info[handle]);
-    }
-    for (index, entry) in module.entry_points.iter().enumerate() {
-        inspect(&entry.function, info.get_entry_point(index));
-    }
-    let mut options = naga::back::glsl::Options {
-        version: naga::back::glsl::Version::Desktop(430),
-        writer_flags: naga::back::glsl::WriterFlags::ADJUST_COORDINATE_SPACE
-            | naga::back::glsl::WriterFlags::FORCE_POINT_SIZE,
-        ..Default::default()
-    };
-    let mut next = [0u8; 5];
-    for (_, global) in module.global_variables.iter() {
-        let Some(binding) = global.binding else {
-            continue;
-        };
-        let class = match global.space {
-            AddressSpace::Uniform => 0,
-            AddressSpace::Storage { .. } => 1,
-            _ => match module.types[global.ty].inner {
-                TypeInner::Image {
-                    class: naga::ImageClass::Storage { .. },
-                    ..
-                } => 2,
-                TypeInner::Sampler { .. } => 3,
-                _ => 4,
-            },
-        };
-        options.binding_map.insert(binding, next[class]);
-        next[class] = next[class]
-            .checked_add(1)
-            .expect("binding count fits GL map");
-    }
-    for entry in &module.entry_points {
-        let pipeline = naga::back::glsl::PipelineOptions {
-            shader_stage: entry.stage,
-            entry_point: entry.name.clone(),
-            multiview: None,
-        };
-        let mut output = String::new();
-        let policies = naga::proc::BoundsCheckPolicies {
-            index: naga::proc::BoundsCheckPolicy::Unchecked,
-            buffer: naga::proc::BoundsCheckPolicy::Unchecked,
-            image_load: naga::proc::BoundsCheckPolicy::ReadZeroSkipWrite,
-            binding_array: naga::proc::BoundsCheckPolicy::Unchecked,
-        };
-        naga::back::glsl::Writer::new(&mut output, &module, &info, &options, &pipeline, policies)
-            .and_then(|mut writer| writer.write())
-            .unwrap_or_else(|error| panic!("{label}/{}: {error:?}", entry.name));
-        assert!(
-            !output.contains("GL_EXT_texture_shadow_lod"),
-            "{label}/{}: ES shadow extension",
-            entry.name
-        );
-        let used = info.get_entry_point(
-            module
-                .entry_points
-                .iter()
-                .position(|candidate| {
-                    candidate.name == entry.name && candidate.stage == entry.stage
-                })
-                .unwrap(),
-        );
-        let multisampled = module.global_variables.iter().any(|(handle, global)| {
-            !used[handle].is_empty()
-                && matches!(
-                    module.types[global.ty].inner,
-                    TypeInner::Image {
-                        class: naga::ImageClass::Sampled { multi: true, .. }
-                            | naga::ImageClass::Depth { multi: true },
-                        ..
-                    }
-                )
-        });
-        if !multisampled {
-            assert!(
-                !output.contains("GL_ARB_shader_texture_image_samples"),
-                "{label}/{}: single-sample program requires GL 4.5",
-                entry.name
-            );
-        }
-        assert!(
-            !output.contains("GL_OES_"),
-            "{label}/{}: ES extension",
-            entry.name
-        );
-        assert!(
-            !output
-                .lines()
-                .any(|line| line.contains("invariant") && line.contains("gl_FragCoord")),
-            "{label}/{}: invariant fragment position",
-            entry.name
-        );
-        // Optional external driver-front-end check; no tool means no claim of driver validation.
-        if std::process::Command::new("glslangValidator")
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
-            use std::io::Write;
-            let stage = match entry.stage {
-                naga::ShaderStage::Vertex => "vert",
-                naga::ShaderStage::Fragment => "frag",
-                naga::ShaderStage::Compute => "comp",
-                _ => continue,
-            };
-            let mut child = std::process::Command::new("glslangValidator")
-                .args(["--stdin", "-S", stage])
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .unwrap();
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(output.as_bytes())
-                .unwrap();
-            let result = child.wait_with_output().unwrap();
-            assert!(
-                result.status.success(),
-                "{label}/{}: {}{}",
-                entry.name,
-                String::from_utf8_lossy(&result.stdout),
-                String::from_utf8_lossy(&result.stderr)
-            );
-        }
-    }
-}
+use crate::desktop_gl::assert_desktop_430;
 
 #[test]
 fn desktop_430_specialized_programs_translate_without_known_hazards() {
@@ -759,6 +573,7 @@ fn desktop_430_specialized_programs_translate_without_known_hazards() {
             &["TERRAIN_UNITS"][..],
             &["ALPHA_TO_COVERAGE"][..],
             &["ENHANCED"][..],
+            &["PACKED_TERRAIN", "ENHANCED"][..],
             &["ENHANCED_SHADOW"][..],
         ] {
             let mut flags = vec!["SINGLE_SAMPLER"];

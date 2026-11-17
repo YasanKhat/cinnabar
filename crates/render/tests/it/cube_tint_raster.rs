@@ -530,24 +530,24 @@ const REFERENCE_SHADE: &str = r#"
 // Resolves each covered pixel's owning block before the existing native colour transfer.
 fn shade_cube(in: FragmentInput, sampled: vec4<f32>) -> vec4<f32> {
     var tint_gamma = vec3(1.0);
-    let tint_kind = in.material_flags & 0x30u;
+    let tint_kind = in.textures_meta.w & 0x30u;
     if (tint_kind != 0u) {
         tint_gamma = blended_biome_tint_gamma(
             tint_kind,
-            in.material_flags,
-            in.biome_record,
-            in.local_position - quad_shape_normal(in.quad_shape) * 0.001,
-            in.world_position - in.local_position,
+            in.textures_meta.w,
+            in.biome_meta.x,
+            in.local_ao.xyz - quad_shape_normal(in.textures_meta.z) * 0.001,
+            in.world_sky.xyz - in.local_ao.xyz,
         ).rgb;
     }
     let native_colour = native_cube_colour(
         sampled,
-        in.material_flags,
+        in.textures_meta.w,
         tint_gamma,
-        in.native_ao_face,
-        point_lit_terrain_light_colour(in.native_light_levels, in.world_position),
+        in.local_ao.w,
+        point_lit_terrain_light_colour(in.uv_aux.zw, in.world_sky.xyz),
         atmosphere.fog_gamma.rgb,
-        distance_fog_amount(in.world_position),
+        distance_fog_amount(in.world_sky.xyz),
     );
     return native_colour;
 }
@@ -556,7 +556,7 @@ fn shade_cube(in: FragmentInput, sampled: vec4<f32>) -> vec4<f32> {
 const MARKER: &str = r#"
 // Alpha reports cache admission while RGB retains all production texture and lighting bindings.
 @fragment fn cache_marker(in: FragmentInput) -> @location(0) vec4<f32> {
-    let colour = shade_cube(in, sample_cube_texture(in, dpdx(in.uv), dpdy(in.uv)));
+    let colour = shade_cube(in, sample_cube_texture(in, dpdx(in.uv_aux.xy), dpdy(in.uv_aux.xy)));
     return vec4(colour.rgb, in.uniform_tint_gamma.a);
 }
 "#;

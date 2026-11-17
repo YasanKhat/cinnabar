@@ -8,11 +8,19 @@ struct ChunkOrigin { value: vec4<i32>, stream_bases: vec4<u32> }
 struct AnimationClockGpu { tick: u32, partial_tick: f32, reserved_a: u32, reserved_b: u32 }
 
 @if(!PACKED_TERRAIN)
-@group(0) @binding(2) var<storage, read> chunk_origins_data: array<ChunkOrigin>;
+@group(0) @binding(2) var<storage, read> chunk_origins_data: array<vec4<u32>>;
+
+// Raw storage preserves the 32-byte CPU record without a std430 struct block.
+@if(!PACKED_TERRAIN)
+fn load_chunk_origins_data(index: u32) -> ChunkOrigin {
+    let base = index * 2u;
+    return ChunkOrigin(vec4<i32>(bitcast<i32>(chunk_origins_data[base + 0u].x), bitcast<i32>(chunk_origins_data[base + 0u].y), bitcast<i32>(chunk_origins_data[base + 0u].z), bitcast<i32>(chunk_origins_data[base + 0u].w)),
+        vec4<u32>(chunk_origins_data[base + 1u].x, chunk_origins_data[base + 1u].y, chunk_origins_data[base + 1u].z, chunk_origins_data[base + 1u].w));
+}
 
 // Reads the same typed record from either terrain layout.
 fn chunk_origins(index: u32) -> ChunkOrigin {
-    @if(!PACKED_TERRAIN) return chunk_origins_data[index];
+    @if(!PACKED_TERRAIN) return load_chunk_origins_data(index);
     @if(PACKED_TERRAIN) {
         if (index >= chunk_origins_length()) { var empty: ChunkOrigin; return empty; }
         let base = index * 8u;
@@ -22,15 +30,25 @@ fn chunk_origins(index: u32) -> ChunkOrigin {
 
 // Returns the record count without including adjacent packed tables.
 fn chunk_origins_length() -> u32 {
-    @if(!PACKED_TERRAIN) return arrayLength(&chunk_origins_data);
+    @if(!PACKED_TERRAIN) return (arrayLength(&chunk_origins_data) / 2u);
     @if(PACKED_TERRAIN) return terrain_length(2u) / 8u;
 }
 @if(!PACKED_TERRAIN)
-@group(0) @binding(9) var<storage, read> animations_data: array<AnimationGpu>;
+@group(0) @binding(9) var<storage, read> animations_data: array<vec4<u32>>;
+
+// Raw storage preserves the 16-byte CPU record without a std430 struct block.
+@if(!PACKED_TERRAIN)
+fn load_animations_data(index: u32) -> AnimationGpu {
+    let base = index * 1u;
+    return AnimationGpu(animations_data[base + 0u].x,
+        animations_data[base + 0u].y,
+        animations_data[base + 0u].z,
+        animations_data[base + 0u].w);
+}
 
 // Reads the same typed record from either terrain layout.
 fn animations(index: u32) -> AnimationGpu {
-    @if(!PACKED_TERRAIN) return animations_data[index];
+    @if(!PACKED_TERRAIN) return load_animations_data(index);
     @if(PACKED_TERRAIN) {
         if (index >= animations_length()) { var empty: AnimationGpu; return empty; }
         let base = index * 4u;

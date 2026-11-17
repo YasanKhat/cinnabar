@@ -901,17 +901,17 @@ struct ActorWitnessCase { normal: vec4<f32>, words: vec4<u32>, distance_multi: v
     out.skin_info.x = actor_witness.words.x;
     out.skin_info.y = 1u;
     let normals = array(vec3(0.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(0.0, -1.0, 0.0));
-    out.world_normal = select(actor_witness.normal.xyz, normals[index], actor_witness.normal.w != 0.0);
+    let world_normal = select(actor_witness.normal.xyz, normals[index], actor_witness.normal.w != 0.0);
     out.back_uv = actor_witness.glint_uv.xy;
-    out.tint = actor_witness.words.y;
-    out.overlay = unpack4x8unorm(actor_witness.words.z);
+    out.material_parameters.w = actor_witness.words.y;
+    out.multitexture_layers.w = actor_witness.words.z;
     out.skin_info.w = 0u;
-    out.light = actor_witness.words.w;
+    out.multitexture_layers.z = actor_witness.words.w;
     out.world_position = vec3(actor_witness.distance_multi.x, 0.0, 0.0);
-    out.multitexture_layers = select(vec2(0xffffffffu), vec2(2u, 3u), bitcast<u32>(actor_witness.distance_multi.y) != 0u);
+    out.multitexture_layers = vec4(select(vec2(0xffffffffu), vec2(2u, 3u), bitcast<u32>(actor_witness.distance_multi.y) != 0u), out.multitexture_layers.zw);
     out.material_parameters.z = bitcast<u32>(actor_witness.distance_multi.z);
     if ((out.material_parameters.z & ACTOR_MATERIAL_KIND_MASK) == ACTOR_MATERIAL_GLINT) { out.multitexture_layers.x = 0u; }
-    out.native_lighting = actor_lighting(out.light, out.world_normal, out.overlay.a);
+    out.native_lighting = actor_lighting(out.multitexture_layers.z, world_normal, unpack4x8unorm(out.multitexture_layers.w).a);
     return out;
 }
 "#;

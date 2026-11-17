@@ -532,14 +532,10 @@ const RASTER_VERTEX: &str = r#"
 const REFERENCE_COLOUR: &str = r#"
 // Resolves each fragment's tint at its owning block before lighting and fog.
 fn ordinary_world_model_gamma_colour(in: FragmentInput, sampled_gamma: vec4<f32>) -> vec4<f32> {
-    var tint_gamma = vec3(1.0);
-    let tint_kind = in.material_flags & 0x30u;
-    if (tint_kind != 0u) {
-        tint_gamma = blended_biome_tint_gamma(tint_kind, in.material_flags, in.biome_record, in.local_position, in.world_origin).rgb;
-    }
-    let lit_gamma = ((sampled_gamma.rgb * tint_gamma) * in.native_ao_face) * terrain_light_colour(in.native_light_levels);
+    let tint_gamma = in.tint_gamma;
+    let lit_gamma = ((sampled_gamma.rgb * tint_gamma) * in.world_ao.w) * terrain_light_colour(in.native_light_levels);
     let fog_gamma = tint_to_gamma(vec4(atmosphere.fog_color_start.rgb, 1.0)).rgb;
-    return vec4(mix(lit_gamma, fog_gamma, distance_fog_amount(in.world_position)), sampled_gamma.a);
+    return vec4(mix(lit_gamma, fog_gamma, distance_fog_amount(in.world_ao.xyz)), sampled_gamma.a);
 }
 "#;
 
@@ -554,9 +550,9 @@ fn fragment(
     if (!front_facing && (in.visibility.x & MODEL_TWO_SIDED) == 0u) { discard; }
     let dx = dpdx(in.uv);
     let dy = dpdy(in.uv);
-    var sampled = sample_model_ref(in, in.textures.x, dx, dy);
-    if (in.frame_blend > 0.0) {
-        sampled = mix(sampled, sample_model_ref(in, in.textures.y, dx, dy), in.frame_blend);
+    var sampled = sample_model_ref(in, in.textures_meta.x, dx, dy);
+    if (bitcast<f32>(in.textures_meta.w) > 0.0) {
+        sampled = mix(sampled, sample_model_ref(in, in.textures_meta.y, dx, dy), bitcast<f32>(in.textures_meta.w));
     }
     if (sampled.a < 0.5) { discard; }
     return ordinary_world_model_colour(in, sampled);

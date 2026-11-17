@@ -28,7 +28,26 @@ struct FarTile {
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<storage, read> quads: array<vec2<u32>>;
-@group(0) @binding(2) var<storage, read> tiles: array<FarTile>;
+@group(0) @binding(2) var<storage, read> tiles: array<vec4<u32>>;
+
+// Raw storage preserves the 16-byte CPU record without a std430 struct block.
+// Avoid dynamically indexing a local array on Gen7.5.
+fn select_corner(index: u32, a: vec3<f32>, b: vec3<f32>, c: vec3<f32>, d: vec3<f32>) -> vec3<f32> {
+    switch index {
+        case 0u: { return a; }
+        case 1u: { return b; }
+        case 2u: { return c; }
+        default: { return d; }
+    }
+}
+
+fn load_tiles(index: u32) -> FarTile {
+    let base = index * 1u;
+    return FarTile(bitcast<i32>(tiles[base + 0u].x),
+        bitcast<i32>(tiles[base + 0u].y),
+        tiles[base + 0u].z,
+        tiles[base + 0u].w);
+}
 @group(0) @binding(3) var colours: texture_2d_array<f32>;
 // Origin x, origin z and side in columns, one unused word, then one bit per near column.
 @group(0) @binding(4) var<storage, read> near_columns: array<u32>;
@@ -63,7 +82,7 @@ fn far_vertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) slot:
     let quad = quads[vertex / 6u];
     var triangles = array<u32, 6>(0u, 1u, 2u, 0u, 2u, 3u);
     let corner = triangles[vertex % 6u];
-    let tile = tiles[slot];
+    let tile = load_tiles(slot);
     let x = f32(quad.x & 127u);
     let z = f32((quad.x >> 7u) & 127u);
     let w = f32((quad.x >> 14u) & 127u);
@@ -73,33 +92,33 @@ fn far_vertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) slot:
     let bottom = f32(bitcast<i32>(quad.y) >> 16u);
 
     // Corners run counter-clockwise seen from outside; xz in cells, y in blocks.
-    var corners: array<vec3<f32>, 4>;
+    var selected: vec3<f32>;
     var normal = vec3(0.0, 1.0, 0.0);
     var owner = vec2(x, z);
     switch face {
         case FAR_TERRAIN_FACE_POSITIVE_X: {
-            corners = array(vec3(x, bottom, z + l), vec3(x, bottom, z), vec3(x, top, z), vec3(x, top, z + l));
+            selected = select_corner(corner, vec3(x, bottom, z + l), vec3(x, bottom, z), vec3(x, top, z), vec3(x, top, z + l));
             normal = vec3(1.0, 0.0, 0.0);
             owner = vec2(x - 1.0, z);
         }
         case FAR_TERRAIN_FACE_NEGATIVE_X: {
-            corners = array(vec3(x, bottom, z), vec3(x, bottom, z + l), vec3(x, top, z + l), vec3(x, top, z));
+            selected = select_corner(corner, vec3(x, bottom, z), vec3(x, bottom, z + l), vec3(x, top, z + l), vec3(x, top, z));
             normal = vec3(-1.0, 0.0, 0.0);
         }
         case FAR_TERRAIN_FACE_POSITIVE_Z: {
-            corners = array(vec3(x, bottom, z), vec3(x + w, bottom, z), vec3(x + w, top, z), vec3(x, top, z));
+            selected = select_corner(corner, vec3(x, bottom, z), vec3(x + w, bottom, z), vec3(x + w, top, z), vec3(x, top, z));
             normal = vec3(0.0, 0.0, 1.0);
             owner = vec2(x, z - 1.0);
         }
         case FAR_TERRAIN_FACE_NEGATIVE_Z: {
-            corners = array(vec3(x + w, bottom, z), vec3(x, bottom, z), vec3(x, top, z), vec3(x + w, top, z));
+            selected = select_corner(corner, vec3(x + w, bottom, z), vec3(x, bottom, z), vec3(x, top, z), vec3(x + w, top, z));
             normal = vec3(0.0, 0.0, -1.0);
         }
         default: {
-            corners = array(vec3(x, top, z), vec3(x, top, z + l), vec3(x + w, top, z + l), vec3(x + w, top, z));
+            selected = select_corner(corner, vec3(x, top, z), vec3(x, top, z + l), vec3(x + w, top, z + l), vec3(x + w, top, z));
         }
     }
-    let local = corners[corner];
+    let local = selected;
     let cell_blocks = f32(1u << tile.level);
     let origin = vec2(tile.origin_x, tile.origin_z);
 

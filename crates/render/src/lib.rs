@@ -14,6 +14,11 @@ pub use depth_smaa::DepthSmaaPlugin;
 mod lighting;
 
 #[cfg(test)]
+#[path = "../tests/it/support/desktop_gl.rs"]
+mod desktop_gl;
+#[cfg(test)]
+mod intel_gl_tests;
+#[cfg(test)]
 mod render_test_support;
 #[cfg(test)]
 mod shader_test_support;

@@ -206,10 +206,10 @@ const VERTEX: &str = r#"
     var out: VertexOutput;
     out.clip_position = vec4((vec2(f32(cell),0.0)+corner) / vec2(8.0,1.0)*vec2(2.0,-2.0)+vec2(-1.0,1.0),0.5,1.0);
     out.uv = vec2(0.5);
-    out.textures.x = PAGE_ONE_REFERENCE | (cell % 4u);
-    out.textures.y = out.textures.x;
+    out.textures_meta.x = PAGE_ONE_REFERENCE | (cell % 4u);
+    out.textures_meta.y = out.textures_meta.x;
     out.visibility = model_visibility(MODEL_VISIBLE | MODEL_TWO_SIDED, vec3(0u));
-    out.material_flags = select(0u, ALPHA_FLAG, cell >= 4u);
+    out.textures_meta.z = select(0u, ALPHA_FLAG, cell >= 4u);
     return out;
 }
 "#;

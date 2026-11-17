@@ -163,9 +163,7 @@ pub(super) fn prepare(
             let Some(Ok(mesh)) = geometry.blocks().unwrap().result() else {
                 continue;
             };
-            if device.limits().max_storage_buffers_per_shader_stage
-                < required_vertex_storage_buffers()
-            {
+            if crate::chunk::pipeline::layouts::uses_compact_terrain(&device) {
                 fail(geometry, "block GPU storage support");
                 continue;
             }

@@ -18,11 +18,27 @@ struct MaterialGpu {
 }
 
 @if(!PACKED_TERRAIN)
-@group(0) @binding(3) var<storage, read> materials_data: array<MaterialGpu>;
+@group(0) @binding(3) var<storage, read> materials_data: array<u32>;
+
+// Raw storage preserves the 40-byte CPU record without a std430 struct block.
+@if(!PACKED_TERRAIN)
+fn load_materials_data(index: u32) -> MaterialGpu {
+    let base = index * MATERIAL_RECORD_WORDS;
+    return MaterialGpu(materials_data[base + 0u],
+        materials_data[base + 1u],
+        materials_data[base + 2u],
+        materials_data[base + 3u],
+        materials_data[base + 4u],
+        materials_data[base + 5u],
+        materials_data[base + 6u],
+        materials_data[base + 7u],
+        materials_data[base + 8u],
+        materials_data[base + 9u]);
+}
 
 // Reads the same typed record from either terrain layout.
 fn materials(index: u32) -> MaterialGpu {
-    @if(!PACKED_TERRAIN) return materials_data[index];
+    @if(!PACKED_TERRAIN) return load_materials_data(index);
     @if(PACKED_TERRAIN) {
         if (index >= materials_length()) { var empty: MaterialGpu; return empty; }
         let base = index * MATERIAL_RECORD_WORDS;
@@ -32,7 +48,7 @@ fn materials(index: u32) -> MaterialGpu {
 
 // Returns the record count without including adjacent packed tables.
 fn materials_length() -> u32 {
-    @if(!PACKED_TERRAIN) return arrayLength(&materials_data);
+    @if(!PACKED_TERRAIN) return arrayLength(&materials_data) / MATERIAL_RECORD_WORDS;
     @if(PACKED_TERRAIN) return terrain_length(3u) / MATERIAL_RECORD_WORDS;
 }
 
