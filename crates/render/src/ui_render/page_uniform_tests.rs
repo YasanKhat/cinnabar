@@ -2,7 +2,7 @@ use render_model::ui_page_uniform::*;
 
 #[test]
 fn repeat_page_table_matches_the_shader_uniform_layout() {
-    let text = super::shader::test_source(include_str!("../ui.wgsl"), false);
+    let text = super::shader::source(include_str!("../ui.wgsl"), false);
     let module = naga::front::wgsl::parse_str(&text).expect("UI shader parses");
     naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
@@ -25,7 +25,7 @@ fn repeat_page_table_matches_the_shader_uniform_layout() {
 
 #[test]
 fn model_palette_matches_the_shader_storage_layout() {
-    let text = super::shader::test_source(include_str!("../ui.wgsl"), false);
+    let text = super::shader::source(include_str!("../ui.wgsl"), false);
     let module = naga::front::wgsl::parse_str(&text).expect("UI shader parses");
     naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),

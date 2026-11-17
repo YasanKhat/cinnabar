@@ -20,7 +20,7 @@ use bevy::{
         Res, ResMut, Resource, Result, Shader, World, default,
     },
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems,
+        GpuResourceAppExt, Render, RenderApp, RenderStartup, RenderSystems,
         extract_resource::ExtractResourcePlugin,
         render_resource::{
             AddressMode, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
@@ -109,6 +109,8 @@ use render_model::{
 use render_model::UiRenderScene;
 
 const UI_SHADER_HANDLE: Handle<Shader> = uuid_handle!("7cfb904c-c8cf-4dd2-9214-7d208ce454e7");
+const UI_SOFTWARE_BILINEAR_SHADER_HANDLE: Handle<Shader> =
+    uuid_handle!("92e8a40c-7f6d-4e87-b1ad-8e94a53fc239");
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UiRenderPlugin;
@@ -149,7 +151,15 @@ fn install_ui_render(app: &mut App) {
         ExtractResourcePlugin::<UiItemGlintTexture>::default(),
     ));
     upscale::install(app);
-    load_internal_asset!(app, UI_SHADER_HANDLE, "ui.wgsl", shader::from_wgsl);
+    load_internal_asset!(app, UI_SHADER_HANDLE, "ui.wgsl", |source, path| {
+        shader::from_wgsl(source, false, path)
+    });
+    load_internal_asset!(
+        app,
+        UI_SOFTWARE_BILINEAR_SHADER_HANDLE,
+        "ui.wgsl",
+        |source, path| { shader::from_wgsl(source, true, path) }
+    );
     load_internal_asset!(
         app,
         composite::UI_COMPOSITE_SHADER_HANDLE,
@@ -178,6 +188,7 @@ fn install_ui_render(app: &mut App) {
                 .before(crate::device_poll::FrameSubmissions),
         )
         .init_resource::<pipeline::UiPipeline>()
+        .init_gpu_resource::<pipeline::UiPipeline>()
         .init_resource::<composite::UiCompositePipeline>()
         .init_resource::<backdrop::UiBackdropPipeline>()
         .init_resource::<backdrop::UiBackdropStore>()
@@ -185,7 +196,10 @@ fn install_ui_render(app: &mut App) {
         .init_resource::<UiHandCoverage>()
         .init_resource::<composite::UiLayerStore>()
         .init_resource::<model_depth::UiModelDepths>()
-        .add_systems(RenderStartup, resources::init_ui_gpu)
+        .add_systems(
+            RenderStartup,
+            resources::init_ui_gpu.after(bevy::render::init_gpu_resource::<pipeline::UiPipeline>),
+        )
         .add_systems(Render, ui_systems());
     profile::install(app.sub_app_mut(RenderApp));
     install_overlay_graph(app.sub_app_mut(RenderApp).world_mut());

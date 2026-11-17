@@ -247,7 +247,11 @@ fn every_shader_parses_and_validates() {
         let source = if name == "ui.wgsl" {
             // Exercise the exact production constructor, including its renderer-owned style
             // constant injection, without publishing a test-only runtime API.
-            standalone(&ui_shader::test_source(&raw, false))
+            let shader = ui_shader::from_wgsl(&raw, false, path.to_string_lossy());
+            let bevy::shader::Source::Wgsl(source) = shader.source else {
+                panic!("UI constructor must produce WGSL");
+            };
+            standalone(&source)
         } else if name == "motion_blur.wgsl" {
             // The production constructor injects the shared motion tile size.
             standalone(&motion_blur_shader::source(&raw, false))
@@ -525,14 +529,22 @@ fn gles_terrain_programs_use_one_sampler_per_image() {
 #[test]
 fn ui_software_bilinear_preserves_the_single_sampler_contract() {
     let raw = include_str!("../../src/ui.wgsl");
-    // Validate both filter implementations. The hardware variant may use two samplers.
-    let hardware = ui_shader::test_source(raw, false);
-    let module = naga::front::wgsl::parse_str(&hardware).expect("hardware UI parses");
-    naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::all(),
-    )
-    .validate(&module)
-    .expect("hardware UI validates");
-    assert_single_sampler_per_image(&ui_shader::test_source(raw, true), "software UI");
+    // Use the same constructor as load_internal_asset!, not a test-only preprocessor.
+    for software_bilinear in [false, true] {
+        let shader = ui_shader::from_wgsl(raw, software_bilinear, "ui.wgsl");
+        let bevy::shader::Source::Wgsl(source) = shader.source else {
+            panic!("UI constructor must produce WGSL");
+        };
+        assert_eq!(source.as_ref(), ui_shader::source(raw, software_bilinear));
+        let module = naga::front::wgsl::parse_str(&source).expect("production UI parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("production UI validates");
+        if software_bilinear {
+            assert_single_sampler_per_image(&source, "software UI");
+        }
+    }
 }

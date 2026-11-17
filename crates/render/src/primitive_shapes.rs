@@ -16,7 +16,8 @@ use bevy::{
     asset::{load_internal_asset, uuid_handle},
     prelude::{App, Handle, Plugin, Shader, World},
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems, extract_resource::ExtractResourcePlugin,
+        GpuResourceAppExt, Render, RenderApp, RenderStartup, RenderSystems,
+        extract_resource::ExtractResourcePlugin,
     },
 };
 
@@ -42,8 +43,9 @@ impl Plugin for PrimitiveShapesRenderPlugin {
         crate::transparent_phase::install(render);
         crate::world_passes::install(render);
         render.init_resource::<pipeline::ShapePipeline>()
+            .init_gpu_resource::<pipeline::ShapePipeline>()
             .add_render_command::<bevy::core_pipeline::core_3d::Transparent3d, pipeline::DrawShapes>()
-            .add_systems(RenderStartup, gpu::init)
+            .add_systems(RenderStartup, gpu::init.after(bevy::render::init_gpu_resource::<pipeline::ShapePipeline>))
             .add_systems(Render, (
                 gpu::prepare.in_set(RenderSystems::PrepareResources),
                 pipeline::prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),

@@ -333,3 +333,47 @@ fn resolved_commands_keep_bucket_layer_blend_scissor_and_index_order() {
         "late layer outside the actual one-layer bucket emits no prefix"
     );
 }
+
+#[test]
+fn startup_and_recovery_replace_the_ui_pipeline_built_before_the_device_exists() {
+    use bevy::render::{ExtractSchedule, render_phase::DrawFunctions};
+    use bevy::{app::SubApp, asset::Assets, ecs::schedule::Schedule};
+
+    let mut render = SubApp::new();
+    render
+        .insert_resource(DrawFunctions::<bevy::core_pipeline::core_3d::Transparent3d>::default())
+        .add_schedule(Schedule::new(RenderStartup))
+        .add_schedule(Render::base_schedule())
+        .add_schedule(Schedule::new(ExtractSchedule));
+    let mut app = App::new();
+    app.insert_resource(Assets::<Shader>::default())
+        .insert_sub_app(RenderApp, render)
+        .add_plugins(UiRenderPlugin);
+    let world = app.sub_app_mut(RenderApp).world_mut();
+    assert!(!world.contains_resource::<RenderDevice>());
+    world
+        .resource_mut::<UiPipeline>()
+        .bind_group_layout
+        .entries
+        .clear();
+
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    world.insert_resource(RenderDevice::from(device));
+    world.insert_resource(RenderQueue::new(queue));
+    for _ in 0..2 {
+        world.run_schedule(RenderStartup);
+        assert!(
+            !world
+                .resource::<UiPipeline>()
+                .bind_group_layout
+                .entries
+                .is_empty()
+        );
+        // A second RenderStartup must reconstruct the resource too, rather than init-if-absent.
+        world
+            .resource_mut::<UiPipeline>()
+            .bind_group_layout
+            .entries
+            .clear();
+    }
+}

@@ -28,7 +28,7 @@ use bevy::{
         Result, Shader, World, default,
     },
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems,
+        GpuResourceAppExt, Render, RenderApp, RenderStartup, RenderSystems,
         extract_resource::ExtractResourcePlugin,
         render_phase::{
             DrawFunctionId, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
@@ -124,8 +124,12 @@ pub(crate) fn install_nametag_render(app: &mut App) {
     crate::world_passes::install(app.sub_app_mut(RenderApp));
     app.sub_app_mut(RenderApp)
         .init_resource::<NametagPipeline>()
+        .init_gpu_resource::<NametagPipeline>()
         .add_render_command::<Transparent3d, DrawNametags>()
-        .add_systems(RenderStartup, init_nametag_gpu)
+        .add_systems(
+            RenderStartup,
+            init_nametag_gpu.after(bevy::render::init_gpu_resource::<NametagPipeline>),
+        )
         .add_systems(
             Render,
             (

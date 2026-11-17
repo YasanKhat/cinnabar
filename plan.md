@@ -2112,9 +2112,11 @@ Flathub submission remain incomplete.
   sampling. Array allocation padding avoids GLES D2/cube target inference while uploads and
   CPU layer indices remain logical. Labels match their single-format target and composite.
   Stable 1.99 locked default/no-default release compilation remains blocked by dependency access
-  in the current environment; Intel HD 4600 post-initialization visual acceptance is incomplete.
-  Native GL presentation and visual
-  acceptance, including dependency-owned non-sRGB-only surface configuration, remain incomplete. No 400 FPS
+  in the current environment. An HD 4600 tester reports successful GL initialization, array
+  allocation and presentation, but UI shader parsing blocked UI display. UI now registers pure
+  WGSL hardware/software filter assets; UI, shape and label pipelines rebuild at RenderStartup
+  after device installation, and Enhanced shadow shaders receive the single-sampler capability.
+  Post-fix UI visual acceptance and non-sRGB-only surface qualification remain incomplete. No 400 FPS
   performance claim is verified. Actor coverage partitioning uses reusable classification buffers
   and sorted membership keys instead of sorting instances with repeated linear lookups. Shadow
   containment and uniforms share cached planes; mesh construction uses fixed-size storage.

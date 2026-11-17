@@ -12,21 +12,51 @@ pub(super) struct UiPipeline {
 impl FromWorld for UiPipeline {
     fn from_world(world: &mut World) -> Self {
         let bind_group_layout = ui_bind_group_layout();
-        let mut descriptor = ui_pipeline_descriptor(bind_group_layout.clone());
-        if world
-            .get_resource::<RenderDevice>()
-            .is_some_and(|device| device.wgpu_device().adapter_info().backend == wgpu::Backend::Gl)
-        {
-            descriptor
-                .fragment
-                .as_mut()
-                .expect("UI fragment")
-                .shader_defs
-                .push("UI_SOFTWARE_BILINEAR".into());
-        }
+        let descriptor = device_pipeline_descriptor(
+            bind_group_layout.clone(),
+            world
+                .get_resource::<RenderDevice>()
+                .map(|device| device.wgpu_device().adapter_info().backend),
+        );
         Self {
             variants: Variants::new(UiPipelineSpecializer, descriptor),
             bind_group_layout,
+        }
+    }
+}
+
+/// Selects a fully constructed WGSL asset for both stages; WGSL has no shader-def processing.
+fn device_pipeline_descriptor(
+    layout: BindGroupLayoutDescriptor,
+    backend: Option<wgpu::Backend>,
+) -> RenderPipelineDescriptor {
+    let mut descriptor = ui_pipeline_descriptor(layout);
+    if backend == Some(wgpu::Backend::Gl) {
+        descriptor.vertex.shader = UI_SOFTWARE_BILINEAR_SHADER_HANDLE;
+        descriptor.fragment.as_mut().expect("UI fragment").shader =
+            UI_SOFTWARE_BILINEAR_SHADER_HANDLE;
+    }
+    descriptor
+}
+
+#[cfg(test)]
+mod device_shader_tests {
+    use super::*;
+
+    #[test]
+    fn gl_selects_the_software_asset_for_both_stages_without_shader_defs() {
+        for backend in [None, Some(wgpu::Backend::Gl), Some(wgpu::Backend::Vulkan)] {
+            let descriptor = device_pipeline_descriptor(ui_bind_group_layout(), backend);
+            let expected = if backend == Some(wgpu::Backend::Gl) {
+                UI_SOFTWARE_BILINEAR_SHADER_HANDLE
+            } else {
+                UI_SHADER_HANDLE
+            };
+            assert_eq!(descriptor.vertex.shader, expected);
+            let fragment = descriptor.fragment.as_ref().unwrap();
+            assert_eq!(fragment.shader, expected);
+            assert!(descriptor.vertex.shader_defs.is_empty());
+            assert!(fragment.shader_defs.is_empty());
         }
     }
 }
