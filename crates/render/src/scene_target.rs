@@ -353,10 +353,10 @@ fn apply_multisample_fallback(
     mut views: Query<(&ExtractedCamera, &mut Msaa)>,
 ) {
     if adapter.as_ref().is_some_and(|adapter| {
-        !adapter
-            .get_downlevel_capabilities()
-            .flags
-            .contains(wgpu::DownlevelFlags::MULTISAMPLED_SHADING)
+        !supports_multisampled_views(
+            adapter.get_info().backend,
+            adapter.get_downlevel_capabilities().flags,
+        )
     }) {
         for (_, mut msaa) in &mut views {
             *msaa = Msaa::Off;
@@ -503,4 +503,28 @@ pub(crate) fn install_graph(world: &mut World) {
     if installed {
         world.insert_resource(PassesInstalled);
     }
+}
+
+/// Robust MSAA loads require GL 4.5's textureSamples extension, unavailable
+/// on GL 4.3 devices. This also gates warmup views and non-player cameras.
+fn supports_multisampled_views(backend: wgpu::Backend, flags: wgpu::DownlevelFlags) -> bool {
+    backend != wgpu::Backend::Gl && flags.contains(wgpu::DownlevelFlags::MULTISAMPLED_SHADING)
+}
+
+#[test]
+fn gl_views_never_enable_msaa_even_with_multisampled_shading() {
+    let supported = wgpu::DownlevelFlags::MULTISAMPLED_SHADING;
+    assert!(!supports_multisampled_views(wgpu::Backend::Gl, supported));
+    assert!(!supports_multisampled_views(
+        wgpu::Backend::Gl,
+        wgpu::DownlevelFlags::empty()
+    ));
+    assert!(supports_multisampled_views(
+        wgpu::Backend::Vulkan,
+        supported
+    ));
+    assert!(!supports_multisampled_views(
+        wgpu::Backend::Vulkan,
+        wgpu::DownlevelFlags::empty()
+    ));
 }

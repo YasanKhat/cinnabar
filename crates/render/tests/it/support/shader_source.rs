@@ -206,6 +206,10 @@ fn compile_prepared_with(
     for (path, source) in [
         ("bevy_render::view", VIEW.to_owned()),
         (
+            "render::model_fragment",
+            include_str!("../../../src/model_fragment.wesl").to_owned(),
+        ),
+        (
             "render::terrain_tables",
             include_str!("../../../src/terrain_tables.wesl").to_owned(),
         ),

@@ -336,7 +336,7 @@ fn grass_palette_index(world_xz: vec2<i32>) -> u32 {
     let p = vec2<f32>(world_xz) * 0.0225;
     let skew = (p.x + p.y) * bitcast<f32>(0x3ebb67aeu);
     let skewed = p + vec2(skew);
-    let cell = vec2<i32>(skewed) - select(vec2(0), vec2(1), skewed <= vec2(0.0));
+    let cell = vec2<i32>(skewed) - vec2(select(0, 1, skewed.x <= 0.0), select(0, 1, skewed.y <= 0.0));
     let unskew = f32(cell.x + cell.y) * bitcast<f32>(0x3e58658cu);
     let first = p - (vec2<f32>(cell) - vec2(unskew));
     let step = select(vec2(0, 1), vec2(1, 0), first.x > first.y);

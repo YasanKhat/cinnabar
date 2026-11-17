@@ -92,7 +92,7 @@ fn combined_depth_stencil_keeps_its_depth_only_sampling_view() {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },

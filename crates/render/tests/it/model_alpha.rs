@@ -56,7 +56,7 @@ fn displaced_models_preserve_opaque_texels_and_cutout_thresholds() {
             shader_source::standalone(include_str!("../../src/model.wesl"), definitions);
         if shadow {
             production = production.replace("@fragment\nfn fragment_shadow(", "fn sampled_shadow(");
-            production.push_str("\n@fragment fn shadow_colour(in: VertexOutput) -> @location(0) vec4<f32> { sampled_shadow(in); return vec4(1.0); }\n");
+            production.push_str("\n@fragment fn shadow_colour(in: FragmentInput) -> @location(0) vec4<f32> { sampled_shadow(in); return vec4(1.0); }\n");
         }
         let source = format!(
             "{}\n{}",
@@ -131,7 +131,7 @@ fn displaced_models_preserve_opaque_texels_and_cutout_thresholds() {
             "fn ordinary_world_model_colour(",
             "fn original_world_model_colour(",
         );
-    production.push_str("\nfn ordinary_world_model_colour(in: VertexOutput, sampled: vec4<f32>) -> vec4<f32> { return sampled; }\n");
+    production.push_str("\nfn ordinary_world_model_colour(in: FragmentInput, sampled: vec4<f32>) -> vec4<f32> { return sampled; }\n");
     let source = format!(
         "{production}\n{}",
         VERTEX

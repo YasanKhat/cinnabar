@@ -16,6 +16,29 @@ import render::enhanced::common::CLASS_WATER;
 @if(ENHANCED)
 import render::enhanced::view::{sky_illumination, material_class, shade_surface, shade_water, waved_water_position};
 
+struct FragmentInput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    // Current and next animation frames share one flat slot.
+    @location(1) @interpolate(flat) textures: vec2<u32>,
+    @location(3) @interpolate(flat) frame_blend: f32,
+    @location(4) water_tint: vec4<f32>,
+    @location(5) lighting: vec3<f32>,
+    @if(ENHANCED)
+    @location(6) sky_light: f32,
+    @if(ENHANCED)
+    @location(7) ambient_occlusion: f32,
+    @location(8) @interpolate(flat) depth_write_route: u32,
+    @location(9) world_position: vec3<f32>,
+    @location(12) native_light_levels: vec2<f32>,
+    @location(13) @interpolate(flat) native_face_shade: f32,
+    @location(2) @interpolate(flat) two_sided: u32,
+    @if(ENHANCED)
+    @location(10) normal: vec3<f32>,
+    @if(ENHANCED)
+    @location(11) @interpolate(flat) surface_class: u32,
+}
+
 struct FrameSample { current: u32, next: u32, blend: f32 }
 
 // These literal tables are the GPU half of the packed-liquid stream contract.
@@ -391,7 +414,7 @@ fn apply_distance_fog(colour: vec3<f32>, world_position: vec3<f32>) -> vec3<f32>
 fn native_liquid_colour(@if(!ENHANCED)
 sampled_gamma: vec3<f32>, @if(!ENHANCED)
 tint_linear: vec3<f32>, @if(!ENHANCED)
-in: VertexOutput) -> vec3<f32> {
+in: FragmentInput) -> vec3<f32> {
     let tint_gamma = tint_to_gamma(vec4(tint_linear, 1.0)).rgb;
     let face_tint = floor(clamp(tint_gamma * in.native_face_shade, vec3(0.0), vec3(1.0)) * 255.0 + vec3(0.0001)) / 255.0;
     let base_gamma = sampled_gamma * face_tint * point_lit_terrain_light_colour(in.native_light_levels, in.world_position);
@@ -402,13 +425,13 @@ in: VertexOutput) -> vec3<f32> {
 }
 
 @fragment
-fn fragment(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+fn fragment(in: FragmentInput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
     return shade_liquid(in, front_facing, dpdx(in.uv), dpdy(in.uv));
 }
 
 // Ordinary transparent liquid colour; `front_facing` follows the packed clockwise winding and
 // `dx`/`dy` are the UV derivatives, taken by the caller in uniform control flow.
-fn shade_liquid(in: VertexOutput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+fn shade_liquid(in: FragmentInput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
     if (in.depth_write_route != 0u) { discard; }
     // Vanilla duplicates only faces marked by the liquid tessellator.
     // In particular, the bottom never has a reverse face at the ice surface.
@@ -448,7 +471,7 @@ fn shade_liquid(in: VertexOutput, front_facing: bool, dx: vec2<f32>, dy: vec2<f3
 }
 
 @fragment
-fn fragment_depth(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+fn fragment_depth(in: FragmentInput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
     if (in.depth_write_route == 0u) { discard; }
     if (!front_facing && in.two_sided == 0u) { discard; }
     let dx = dpdx(in.uv);

@@ -25,20 +25,9 @@ pub(super) const SHADER: Handle<Shader> =
 pub(super) const MSAA_SHADER: Handle<Shader> =
     bevy::asset::uuid_handle!("5eedbcb4-78a6-4228-872e-ddc2eeed4f63");
 
-/// Uses per-sample world occlusion on multisampled views.
-pub(super) fn source(msaa: bool, source: &str) -> String {
-    if msaa {
-        source
-            .replace("texture_depth_2d", "texture_depth_multisampled_2d")
-            .replace(
-                "position: vec4<f32>)",
-                "position: vec4<f32>, @builtin(sample_index) sample: u32)",
-            )
-            .replace("position.xy), 0)", "position.xy), i32(sample))")
-    } else {
-        source.to_owned()
-    }
-}
+#[path = "clip_shader.rs"]
+mod clip_shader;
+pub(super) use clip_shader::source;
 
 pub(crate) const FORMAT: TextureFormat = TextureFormat::Depth24PlusStencil8;
 /// Conservative depth/stencil storage per physical sample, including backend padding.
@@ -66,7 +55,7 @@ fn depth_layout(msaa: bool) -> BindGroupLayoutDescriptor {
             binding: 0,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Texture {
-                sample_type: TextureSampleType::Depth,
+                sample_type: TextureSampleType::Float { filterable: false },
                 view_dimension: TextureViewDimension::D2,
                 multisampled: msaa,
             },

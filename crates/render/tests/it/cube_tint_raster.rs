@@ -528,7 +528,7 @@ const VERTEX: &str = r#"
 
 const REFERENCE_SHADE: &str = r#"
 // Resolves each covered pixel's owning block before the existing native colour transfer.
-fn shade_cube(in: VertexOutput, sampled: vec4<f32>) -> vec4<f32> {
+fn shade_cube(in: FragmentInput, sampled: vec4<f32>) -> vec4<f32> {
     var tint_gamma = vec3(1.0);
     let tint_kind = in.material_flags & 0x30u;
     if (tint_kind != 0u) {
@@ -555,7 +555,7 @@ fn shade_cube(in: VertexOutput, sampled: vec4<f32>) -> vec4<f32> {
 
 const MARKER: &str = r#"
 // Alpha reports cache admission while RGB retains all production texture and lighting bindings.
-@fragment fn cache_marker(in: VertexOutput) -> @location(0) vec4<f32> {
+@fragment fn cache_marker(in: FragmentInput) -> @location(0) vec4<f32> {
     let colour = shade_cube(in, sample_cube_texture(in, dpdx(in.uv), dpdy(in.uv)));
     return vec4(colour.rgb, in.uniform_tint_gamma.a);
 }

@@ -269,7 +269,7 @@ const WITNESS: &str = r#"
     out.clip_position = vec4(point * vec2(2.0,-2.0) + vec2(-1.0,1.0),0.5,1.0);
     return out;
 }
-@fragment fn normal_fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+@fragment fn normal_fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     return vec4(in.normal * 0.5 + vec3(0.5),1.0);
 }
 "#;

@@ -5,6 +5,33 @@ import render::lighting::{actor_lighting, actor_distance_fog, actor_light_colour
 @if(ALPHA_TO_COVERAGE)
 import render::lighting::{CutoutSample, cutout_alpha_array_region};
 
+struct FragmentInput {
+    @builtin(position) position: vec4<f32>,
+    // xy samples the artwork; zw carries the item sprite or face origin.
+    @location(0) @interpolate(perspective, centroid) uv: vec4<f32>,
+    // Texture layer, geometry validity, optional glint instance index and UV wrapping.
+    @location(1) @interpolate(flat) skin_info: vec4<u32>,
+    @if(!ACTOR_MOTION)
+    @location(2) world_normal: vec3<f32>,
+    @if(ACTOR_MOTION)
+    @location(2) current_clip: vec4<f32>,
+    @location(3) @interpolate(perspective, centroid) back_uv: vec2<f32>,
+    @location(4) @interpolate(flat) tint: u32,
+    @location(5) @interpolate(flat) overlay: vec4<f32>,
+    @location(7) @interpolate(flat) light: u32,
+    @location(8) world_position: vec3<f32>,
+    @location(9) @interpolate(flat) multitexture_layers: vec2<u32>,
+    @location(10) native_lighting: vec3<f32>,
+    // Dissolve float bits, surface kind and material word share one flat varying, keeping
+    // the interface within fifteen slots including front-facing.
+    @location(12) @interpolate(flat) material_parameters: vec3<u32>,
+    @location(11) back_native_lighting: vec3<f32>,
+    @if(ALPHA_TO_COVERAGE)
+    @location(13) @interpolate(flat) chart_bounds: vec4<u32>,
+    @if(ACTOR_MOTION)
+    @location(6) previous_clip: vec4<f32>,
+}
+
 struct GeometrySpan {
     first_vertex: u32,
     vertex_count: u32,
@@ -300,7 +327,7 @@ region: vec4<i32>) -> CutoutSample {
     }
 }
 
-fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
+fn actor_colour(input: FragmentInput, front: bool) -> vec4<f32> {
     var uv = select(input.back_uv, input.uv.xy, front);
     // Gradients precede per-pixel rejection and remain valid inside material branches.
     let uv_dx = dpdx(uv);
@@ -467,25 +494,25 @@ fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
 }
 
 @fragment
-fn actor_fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn actor_fragment(input: FragmentInput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     return actor_colour(input, front);
 }
 
 @if(MASK_DISSOLVE && !MASK_DISSOLVE_MSAA)
-@group(3) @binding(0) var mask_dissolve_depth: texture_depth_2d;
+@group(3) @binding(0) var mask_dissolve_depth: texture_2d<f32>;
 @if(MASK_DISSOLVE_MSAA)
-@group(3) @binding(0) var mask_dissolve_depth: texture_depth_multisampled_2d;
+@group(3) @binding(0) var mask_dissolve_depth: texture_multisampled_2d<f32>;
 
 @fragment
-fn actor_mask_fragment(input: VertexOutput, @builtin(front_facing) front: bool,
+fn actor_mask_fragment(input: FragmentInput, @builtin(front_facing) front: bool,
     @if(MASK_DISSOLVE_MSAA) @builtin(sample_index) sample_index: u32,
 ) -> @location(0) vec4<f32> {
     // The scene's function owns every material rejection and multisample cutout footprint.
     let colour = actor_colour(input, front);
     @if(MASK_DISSOLVE && !MASK_DISSOLVE_MSAA)
-    let companion_depth = textureLoad(mask_dissolve_depth, vec2<i32>(input.position.xy), 0);
+    let companion_depth = textureLoad(mask_dissolve_depth, vec2<i32>(input.position.xy), 0).r;
     @if(MASK_DISSOLVE_MSAA)
-    let companion_depth = textureLoad(mask_dissolve_depth, vec2<i32>(input.position.xy), i32(sample_index));
+    let companion_depth = textureLoad(mask_dissolve_depth, vec2<i32>(input.position.xy), i32(sample_index)).r;
     @if(MASK_DISSOLVE)
     if (companion_depth == 0.0 || input.position.z != companion_depth) { discard; }
     @if(MASK_BLEND)
@@ -496,7 +523,7 @@ fn actor_mask_fragment(input: VertexOutput, @builtin(front_facing) front: bool,
 
 @if(ACTOR_MOTION)
 // Both frames retain local detail by projecting their actor roots relative to their cameras.
-fn actor_motion_velocity(input: VertexOutput) -> vec2<f32> {
+fn actor_motion_velocity(input: FragmentInput) -> vec2<f32> {
     var velocity = vec2(0.0);
     if (input.previous_clip.w > 0.00001 && input.current_clip.w > 0.00001) {
         velocity = (input.current_clip.xy / input.current_clip.w - input.previous_clip.xy / input.previous_clip.w) * vec2(0.5, -0.5);
@@ -506,7 +533,7 @@ fn actor_motion_velocity(input: VertexOutput) -> vec2<f32> {
 
 @if(ACTOR_MOTION)
 @fragment
-fn actor_motion_fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn actor_motion_fragment(input: FragmentInput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     // The same artwork and discard rules retain cutouts and multisample alpha coverage.
     let colour = actor_colour(input, front);
     return vec4(actor_motion_velocity(input), 1.0, colour.a);

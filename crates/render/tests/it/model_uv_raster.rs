@@ -223,7 +223,7 @@ struct ExpectedUvs { values: array<vec4<f32>, 128>, }
     out.clip_position = vec4(p*vec2(2.0,-2.0)+vec2(-1.0,1.0),0.5+expected_uvs.values[0].z,1.0);
     return out;
 }
-@fragment fn uv_fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+@fragment fn uv_fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     return textureSample(block_textures_page_0,block_sampler,in.uv,0);
 }
 "#;

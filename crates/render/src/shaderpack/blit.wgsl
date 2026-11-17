@@ -13,12 +13,12 @@ struct DepthParameters {
 }
 
 @group(0) @binding(0) var source_colour: texture_2d<f32>;
-@group(0) @binding(1) var source_depth: texture_depth_2d;
+@group(0) @binding(1) var source_depth: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> depth_parameters: DepthParameters;
 @group(0) @binding(3) var source_sampler: sampler;
 // The pack's geometry depth (OpenGL window depth, bottom-up like the pack's buffers) as the
 // depth attachment.
-@group(0) @binding(4) var pack_depth: texture_depth_2d;
+@group(0) @binding(4) var pack_depth: texture_2d<f32>;
 
 struct Fullscreen {
     @builtin(position) position: vec4<f32>,
@@ -68,7 +68,7 @@ fn scene_colour(in: Fullscreen) -> SceneColourOut {
 
 // OpenGL window depth of the scene sample at top-down `texel`; the sky stays at 1.
 fn gl_depth_at(texel: vec2<i32>) -> f32 {
-    let reverse = textureLoad(source_depth, texel, 0);
+    let reverse = textureLoad(source_depth, texel, 0).r;
     if (reverse <= 0.0) {
         return 1.0;
     }
@@ -126,7 +126,7 @@ fn preserve(in: Fullscreen) -> @location(0) vec4<f32> {
 // The geometry depth attachment into a float `depthtex`/`shadowtex`, texel for texel.
 @fragment
 fn depth_copy(in: Fullscreen) -> @location(0) vec4<f32> {
-    let depth = textureLoad(pack_depth, vec2<i32>(in.position.xy), 0);
+    let depth = textureLoad(pack_depth, vec2<i32>(in.position.xy), 0).r;
     return vec4<f32>(depth, 0.0, 0.0, 1.0);
 }
 
@@ -156,7 +156,7 @@ fn downsample_unfilterable(in: Fullscreen) -> @location(0) vec4<f32> {
 // Restores top-down reverse-Z depth for native overlays after pack geometry replaces the scene.
 @fragment
 fn overlay_depth(in: Fullscreen) -> @builtin(frag_depth) f32 {
-    let depth = textureLoad(pack_depth, flipped_texel(in.uv, textureDimensions(pack_depth)), 0);
+    let depth = textureLoad(pack_depth, flipped_texel(in.uv, textureDimensions(pack_depth)), 0).r;
     if depth >= 1.0 {
         return 0.0;
     }
@@ -176,7 +176,7 @@ fn smooth_center_depth(depth: f32) {
 @compute @workgroup_size(1)
 fn center_depth_geometry() {
     let size = textureDimensions(pack_depth);
-    smooth_center_depth(textureLoad(pack_depth, vec2<i32>(size / 2u), 0));
+    smooth_center_depth(textureLoad(pack_depth, vec2<i32>(size / 2u), 0).r);
 }
 
 // The same bottom-up centre texel of the top-down native scene inside the view's viewport.

@@ -10,7 +10,7 @@ import render::enhanced::common::{
 @group(0) @binding(2) var linear_sampler: sampler;
 @group(0) @binding(3) var bloom_texture: texture_2d<f32>;
 @group(0) @binding(4) var shaft_texture: texture_2d<f32>;
-@group(0) @binding(5) var depth_texture: texture_depth_2d;
+@group(0) @binding(5) var depth_texture: texture_2d<f32>;
 @group(0) @binding(6) var shadow_map: texture_depth_2d_array;
 @group(0) @binding(7) var shadow_sampler: sampler_comparison;
 
@@ -38,7 +38,7 @@ fn light_shafts(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     }
     let size = vec2<i32>(textureDimensions(depth_texture));
     let coord = clamp(vec2<i32>(in.uv * vec2<f32>(size)), vec2(0), size - vec2(1));
-    let depth = max(textureLoad(depth_texture, coord, 0), 1.0e-6);
+    let depth = max(textureLoad(depth_texture, coord, 0).r, 1.0e-6);
     let ndc = vec2(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0);
     let world_h = frame.world_from_clip * vec4(ndc, depth, 1.0);
     let camera = frame.camera_time.xyz;

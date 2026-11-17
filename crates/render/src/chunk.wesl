@@ -12,6 +12,39 @@ import render::lighting::{CutoutSample, cutout_alpha_array, cutout_mix};
 @if(ENHANCED)
 import render::enhanced::view::{sky_illumination, material_class, shade_surface, waved_position};
 
+struct FragmentInput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat) current_texture: u32,
+    // Face, extents and UV turn of the quad; see `pack_quad_shape`.
+    @location(2) @interpolate(flat) quad_shape: u32,
+    @location(3) @interpolate(flat) material_flags: u32,
+    @location(4) local_position: vec3<f32>,
+    @location(5) @interpolate(flat) biome_record: u32,
+    @location(6) @interpolate(flat) next_texture: u32,
+    @location(7) @interpolate(flat) frame_blend: f32,
+    @location(8) world_position: vec3<f32>,
+    // Only Enhanced shading reads the baked lightmap colour; vanilla samples the
+    // native table from `native_light_levels` per fragment.
+    @if(ENHANCED)
+    @location(9) lighting: vec3<f32>,
+    @if(ENHANCED)
+    @location(10) sky_light: f32,
+    @if(ENHANCED)
+    @location(11) ambient_occlusion: f32,
+    @if(ENHANCED)
+    @location(12) @interpolate(flat) surface_class: u32,
+    @if(!ENHANCED)
+    @location(10) native_light_levels: vec2<f32>,
+    @if(!ENHANCED)
+    @location(11) native_ao_face: f32,
+    @if(!ENHANCED)
+    @location(12) @interpolate(flat) uniform_tint_gamma: vec4<f32>,
+    // Cinnabar masks: inverted glow and emissive references (zero names none) and strength bits.
+    @if(!ENHANCED)
+    @location(13) @interpolate(flat) masks: vec3<u32>,
+}
+
 const TERRAIN_ALPHA_THRESHOLD: f32 = 0.5;
 
 struct PackedQuad {
@@ -649,7 +682,7 @@ struct CubeMasks {
 
 @if(!ENHANCED)
 fn cube_masks(@if(!ENHANCED)
-in: VertexOutput) -> CubeMasks {
+in: FragmentInput) -> CubeMasks {
     let uv_dx = dpdx(in.uv);
     let uv_dy = dpdy(in.uv);
     var masks = CubeMasks(vec3(0.0), 0.0);
@@ -696,7 +729,7 @@ fn native_masked_cube_colour(
 }
 
 @fragment
-fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn fragment(in: FragmentInput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let uv_dx = dpdx(in.uv);
     let uv_dy = dpdy(in.uv);
     if (!material_face_is_visible(in.material_flags, front)) { discard; }
@@ -800,7 +833,7 @@ flags: u32) -> CutoutSample {
 // Single-sided opaque runs: back-face culling and the mesher's material partition
 // stand in for both discards, keeping early depth and hidden-surface removal.
 @fragment
-fn fragment_solid(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragment_solid(in: FragmentInput) -> @location(0) vec4<f32> {
     @if(OPAQUE_OVERDRAW)
     return vec4(1.0);
     @if(!OPAQUE_OVERDRAW)
@@ -808,7 +841,7 @@ fn fragment_solid(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 // Sealed quad edges extend past the face, so their pixels clamp to its edge texels.
-fn sample_cube_texture(in: VertexOutput, uv_dx: vec2<f32>, uv_dy: vec2<f32>) -> vec4<f32> {
+fn sample_cube_texture(in: FragmentInput, uv_dx: vec2<f32>, uv_dy: vec2<f32>) -> vec4<f32> {
     let uv = clamp(in.uv, vec2(0.0), quad_shape_uv_limit(in.quad_shape));
     let frame_blend = in.frame_blend;
     let current_sample = sample_material_texture_ref(in.current_texture, uv, uv_dx, uv_dy, in.material_flags);
@@ -823,7 +856,7 @@ fn sample_cube_texture(in: VertexOutput, uv_dx: vec2<f32>, uv_dy: vec2<f32>) -> 
 // Mixed records and position-noise grass keep their original per-block fragment lookup.
 @if(!ENHANCED)
 fn ordinary_cube_tint_gamma(@if(!ENHANCED)
-in: VertexOutput) -> vec3<f32> {
+in: FragmentInput) -> vec3<f32> {
     if (in.uniform_tint_gamma.a != 0.0) { return in.uniform_tint_gamma.rgb; }
     var tint_gamma = vec3(1.0);
     let tint_kind = in.material_flags & 0x30u;
@@ -839,7 +872,7 @@ in: VertexOutput) -> vec3<f32> {
     return tint_gamma;
 }
 
-fn shade_cube(in: VertexOutput, sampled: vec4<f32>) -> vec4<f32> {
+fn shade_cube(in: FragmentInput, sampled: vec4<f32>) -> vec4<f32> {
     @if(ENHANCED)
     let colour = apply_material_tint(
         sampled,
@@ -885,7 +918,7 @@ fn shade_cube(in: VertexOutput, sampled: vec4<f32>) -> vec4<f32> {
 @if(ENHANCED_SHADOW)
 @fragment
 fn fragment_shadow(@if(ENHANCED_SHADOW)
-in: VertexOutput, @if(ENHANCED_SHADOW)
+in: FragmentInput, @if(ENHANCED_SHADOW)
 @builtin(front_facing) front: bool) {
     let dx = dpdx(in.uv);
     let dy = dpdy(in.uv);

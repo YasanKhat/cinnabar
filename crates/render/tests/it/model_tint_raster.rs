@@ -531,7 +531,7 @@ const RASTER_VERTEX: &str = r#"
 
 const REFERENCE_COLOUR: &str = r#"
 // Resolves each fragment's tint at its owning block before lighting and fog.
-fn ordinary_world_model_gamma_colour(in: VertexOutput, sampled_gamma: vec4<f32>) -> vec4<f32> {
+fn ordinary_world_model_gamma_colour(in: FragmentInput, sampled_gamma: vec4<f32>) -> vec4<f32> {
     var tint_gamma = vec3(1.0);
     let tint_kind = in.material_flags & 0x30u;
     if (tint_kind != 0u) {
@@ -547,7 +547,7 @@ const REFERENCE_FRAGMENT: &str = r#"
 // Samples and mixes full frame colour before rejecting uncovered fragments.
 @fragment
 fn fragment(
-    in: VertexOutput,
+    in: FragmentInput,
     @builtin(front_facing) front_facing: bool,
 ) -> @location(0) vec4<f32> {
     if (in.visibility.x == 0u) { discard; }

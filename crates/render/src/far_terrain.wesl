@@ -5,6 +5,20 @@ import bevy_render::view::View;
 import render::lighting::{actor_distance_fog, face_shade, terrain_light_colour, tint_to_linear};
 import render::world_projection::{camera_offset_clip, section_camera_offset};
 
+struct FragmentInput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) offset: vec3<f32>,
+    @location(1) cell: vec2<f32>,
+    @location(2) @interpolate(flat) light: vec3<f32>,
+    @location(3) @interpolate(flat) layer: u32,
+    @location(4) @interpolate(flat) shade: f32,
+    // Coarser tiles hide per fragment over near columns: the tile origin in blocks, the
+    // owning block relative to it, and whether to test at all.
+    @location(5) @interpolate(flat) origin: vec2<i32>,
+    @location(6) owner_block: vec2<f32>,
+    @location(7) @interpolate(flat) coarse: u32,
+}
+
 struct FarTile {
     origin_x: i32,
     origin_z: i32,
@@ -111,7 +125,7 @@ fn far_vertex(@builtin(vertex_index) vertex: u32, @builtin(instance_index) slot:
 }
 
 @fragment
-fn far_fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+fn far_fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     // A coarser quad can span columns; only the part over near terrain is dropped.
     if (in.coarse != 0u) {
         let block = in.origin + vec2<i32>(floor(in.owner_block));

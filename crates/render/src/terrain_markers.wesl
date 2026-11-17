@@ -5,6 +5,20 @@ import render::lighting::{terrain_light_levels, terrain_light_colour, world_fog_
 import render::world_projection::{section_camera_offset, camera_offset_clip};
 
 // The frames of one marker's art, selected by the shared terrain animation clock.
+struct FragmentInput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    // Bits 8..16 hold the cell light.
+    @location(1) @interpolate(flat) packed: u32,
+    // Page and layer of the current frame, then of the frame blended towards.
+    @location(2) @interpolate(flat) frames: vec4<u32>,
+    // UV scales of both frames and the blend weight towards the second.
+    @location(3) @interpolate(flat) frame_mix: vec3<f32>,
+    // Source-to-page gradient scales of both frames.
+    @location(4) @interpolate(flat) gradient_scales: vec4<f32>,
+    @location(5) camera_offset: vec3<f32>,
+}
+
 struct MarkerAnimation { frame_start: u32, frame_count: u32, ticks_per_frame: u32, flags: u32 }
 // One frame's texture page, array layer, exposed UV scale and source-to-page size ratio.
 struct MarkerTexture { page: u32, layer: u32, uv_scale: f32, reserved: u32, gradient_scale: vec2<f32> }
@@ -120,7 +134,7 @@ fn sample_page(page: u32, uv: vec2<f32>, layer: i32, dx: vec2<f32>, dy: vec2<f32
 }
 
 @fragment
-fn marker_fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+fn marker_fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     let dx = dpdx(in.uv);
     let dy = dpdy(in.uv);
     let current = in.uv * in.frame_mix.x;

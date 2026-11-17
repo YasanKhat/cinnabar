@@ -52,7 +52,7 @@ impl EntityShadowGpu {
                         1,
                         fragment,
                         BindingType::Texture {
-                            sample_type: TextureSampleType::Depth,
+                            sample_type: TextureSampleType::Float { filterable: false },
                             view_dimension: TextureViewDimension::D2,
                             multisampled,
                         },

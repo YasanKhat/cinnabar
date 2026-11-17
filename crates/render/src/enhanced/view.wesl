@@ -13,7 +13,7 @@ import render::enhanced::common::{
 @group(2) @binding(2) var enhanced_shadow_sampler: sampler_comparison;
 @group(2) @binding(3) var enhanced_material_classes: texture_2d<u32>;
 @group(2) @binding(4) var enhanced_scene_colour: texture_2d<f32>;
-@group(2) @binding(5) var enhanced_scene_depth: texture_depth_2d;
+@group(2) @binding(5) var enhanced_scene_depth: texture_2d<f32>;
 @group(2) @binding(6) var enhanced_linear_sampler: sampler;
 
 const EMISSIVE_GAIN: f32 = 3.0;
@@ -167,7 +167,7 @@ fn scene_uv(world: vec3<f32>) -> vec3<f32> {
 fn scene_depth_at(uv: vec2<f32>) -> f32 {
     let size = vec2<i32>(textureDimensions(enhanced_scene_depth));
     let coord = clamp(vec2<i32>(uv * vec2<f32>(size)), vec2(0), size - vec2(1));
-    return textureLoad(enhanced_scene_depth, coord, 0);
+    return textureLoad(enhanced_scene_depth, coord, 0).r;
 }
 
 // Screen-space reflection against the opaque snapshot; alpha is hit confidence.

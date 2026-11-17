@@ -291,6 +291,14 @@ pub(crate) fn load_shaders(app: &mut App) {
     load_internal_asset!(app, CHUNK_SHADER_HANDLE, "../chunk.wesl", |source, path| {
         crate::shader_safety::from_wesl(crate::material_shader::source(source), path)
     });
+    const MODEL_FRAGMENT: bevy::asset::Handle<bevy::shader::Shader> =
+        bevy::asset::uuid_handle!("b463e47c-69db-4c72-8af2-4258c986b579");
+    load_internal_asset!(
+        app,
+        MODEL_FRAGMENT,
+        "../model_fragment.wesl",
+        |source, path| { crate::shader_safety::from_wesl(source, path) }
+    );
     load_internal_asset!(app, MODEL_SHADER_HANDLE, "../model.wesl", |source, path| {
         crate::shader_safety::from_wesl(crate::material_shader::source(source), path)
     });

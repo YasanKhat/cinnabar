@@ -5,8 +5,42 @@
 // refs. Both paths run the liquid and model programs' own vertex and shading functions on their
 // own outputs, so the picture matches drawing each family through its own pipeline.
 import render::chunk_bindings::{TRANSPARENT_WATER_DRAW_FLAG, transparent_refs};
-import render::liquid::{VertexOutput as LiquidOutput, liquid_record, vertex_for_record, shade_liquid};
-import render::model::{VertexOutput as ModelOutput, model_vertex, shade_blend};
+import render::liquid::{FragmentInput as LiquidFragmentInput, liquid_record, vertex_for_record, shade_liquid};
+import render::model::{model_vertex, shade_blend};
+
+import render::model_fragment::FragmentInput as ModelFragmentInput;
+
+struct FragmentInput {
+    // Fragment position is an input; only the vertex interface is invariant.
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) @interpolate(flat) routing: vec4<u32>,
+    @location(1) @interpolate(flat) textures: vec2<u32>,
+    @location(2) @interpolate(flat) material_biome: vec2<u32>,
+    @location(3) @interpolate(flat) frame_face: vec2<f32>,
+    // Vanilla shading reads neither family's biome lattice position, baked lightmap colour nor
+    // normal; distant water's many small triangles pay for every interpolant they carry.
+    @if(ENHANCED)
+    @location(4) @interpolate(flat) local_position: vec3<f32>,
+    @if(ENHANCED)
+    @location(5) @interpolate(flat) world_origin: vec3<f32>,
+    @location(6) world_position: vec3<f32>,
+    @if(ENHANCED)
+    @location(7) lighting: vec3<f32>,
+    @if(ENHANCED)
+    @location(8) normal: vec3<f32>,
+    @if(ENHANCED)
+    @location(9) sky_ao: vec2<f32>,
+    @if(ENHANCED)
+    @location(10) @interpolate(flat) surface_class: u32,
+    @if(!ENHANCED)
+    @location(9) native_light_ao: vec3<f32>,
+    @if(!ENHANCED)
+    @location(10) @interpolate(flat) tint_gamma: vec3<f32>,
+    @location(11) liquid_uv: vec2<f32>,
+    @location(12) water_tint: vec4<f32>,
+    // Centroid sampling stays separate from the liquid's ordinary UV interpolation.
+    @location(13) @interpolate(perspective, centroid) model_uv: vec2<f32>,
+}
 
 struct VertexOutput {
     // Invariant like both families' outputs, so shared edges keep identical positions.
@@ -119,8 +153,8 @@ fn vertex_blocks(@builtin(vertex_index) corner: u32, @builtin(instance_index) fa
     return terrain_vertex(reference.metadata_index + corner, reference.liquid_record_index);
 }
 
-fn liquid_output(in: VertexOutput) -> LiquidOutput {
-    var liquid: LiquidOutput;
+fn liquid_output(in: FragmentInput) -> LiquidFragmentInput {
+    var liquid: LiquidFragmentInput;
     liquid.clip_position = in.clip_position;
     liquid.uv = in.liquid_uv;
     liquid.textures.x = in.textures.x;
@@ -146,8 +180,8 @@ fn liquid_output(in: VertexOutput) -> LiquidOutput {
     return liquid;
 }
 
-fn model_output(in: VertexOutput) -> ModelOutput {
-    var model: ModelOutput;
+fn model_output(in: FragmentInput) -> ModelFragmentInput {
+    var model: ModelFragmentInput;
     model.clip_position = in.clip_position;
     model.uv = in.model_uv;
     model.textures.x = in.textures.x;
@@ -181,7 +215,7 @@ fn model_output(in: VertexOutput) -> ModelOutput {
 }
 
 @fragment
-fn fragment(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+fn fragment(in: FragmentInput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
     // Derivatives stay in uniform control flow; each family only reads its own.
     let liquid_dx = dpdx(in.liquid_uv);
     let liquid_dy = dpdy(in.liquid_uv);

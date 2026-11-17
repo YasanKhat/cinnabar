@@ -54,7 +54,7 @@ struct Params {
 
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var linear_clamp: sampler;
-@group(0) @binding(2) var input_depth: texture_depth_2d;
+@group(0) @binding(2) var input_depth: texture_2d<f32>;
 @group(0) @binding(3) var current_color: texture_2d<f32>;
 @group(0) @binding(4) var previous_color: texture_2d<f32>;
 @group(0) @binding(5) var dilated_depth_out: texture_storage_2d<r32float, write>;
@@ -374,7 +374,7 @@ fn load_input_depth(p: vec2<i32>) -> f32 {
     if !is_on_screen(p, params.render_size) {
         return 0.0;
     }
-    return textureLoad(input_depth, p, 0);
+    return textureLoad(input_depth, p, 0).r;
 }
 
 /// Dilates nearest depth, computes camera motion and reconstructs old coverage.

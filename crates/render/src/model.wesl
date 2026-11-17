@@ -1,3 +1,5 @@
+import render::model_fragment::FragmentInput;
+
 import render::chunk_bindings::{
     view, chunk_origins, block_textures_page_0, block_textures_page_1, block_textures_page_2,
     block_textures_page_3, block_textures_page_4, block_sampler, terrain_gamma_page_0,
@@ -708,7 +710,7 @@ fn sample_ref(texture_ref: u32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>) -> 
     }
 }
 
-fn sample_model_ref(in: VertexOutput, texture_ref: u32, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+fn sample_model_ref(in: FragmentInput, texture_ref: u32, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
     if ((in.visibility.x & MODEL_BOUNDED_TILE) != 0u) {
         return sample_ref(texture_ref, in.uv, dx, dy);
     }
@@ -821,7 +823,7 @@ repeat_uv: bool) -> CutoutSample {
 // Repeating quads read the neighbouring tile across a seam; single-tile quads stop at their edge.
 @if(ALPHA_TO_COVERAGE)
 fn model_cutout(@if(ALPHA_TO_COVERAGE)
-in: VertexOutput, @if(ALPHA_TO_COVERAGE)
+in: FragmentInput, @if(ALPHA_TO_COVERAGE)
 texture_ref: u32, @if(ALPHA_TO_COVERAGE)
 dx: vec2<f32>, @if(ALPHA_TO_COVERAGE)
 dy: vec2<f32>, @if(ALPHA_TO_COVERAGE)
@@ -849,7 +851,7 @@ fn apply_distance_fog(colour: vec3<f32>, world_position: vec3<f32>) -> vec3<f32>
 // Encode only at our existing Bevy sRGB framebuffer boundary.
 @if(!ENHANCED)
 fn ordinary_world_model_gamma_colour(@if(!ENHANCED)
-in: VertexOutput, @if(!ENHANCED)
+in: FragmentInput, @if(!ENHANCED)
 sampled_gamma: vec4<f32>) -> vec4<f32> {
     // Alpha-masked tint: alpha weights the tint and the face stays opaque, as on cube faces.
     let overlay = material_uses_overlay_mask(in.material_flags);
@@ -875,14 +877,14 @@ sampled_gamma: vec4<f32>) -> vec4<f32> {
 
 @if(!ENHANCED)
 fn ordinary_world_model_colour(@if(!ENHANCED)
-in: VertexOutput, @if(!ENHANCED)
+in: FragmentInput, @if(!ENHANCED)
 sampled_gamma: vec4<f32>) -> vec4<f32> {
     return tint_to_linear(ordinary_world_model_gamma_colour(in, sampled_gamma));
 }
 
 @fragment
 fn fragment(
-    in: VertexOutput,
+    in: FragmentInput,
     @builtin(front_facing) front_facing: bool,
 ) -> @location(0) vec4<f32> {
     if (in.visibility.x == 0u) { discard; }
@@ -932,7 +934,7 @@ fn fragment(
 
 @fragment
 fn fragment_blend(
-    in: VertexOutput,
+    in: FragmentInput,
     @builtin(front_facing) front_facing: bool,
 ) -> @location(0) vec4<f32> {
     return shade_blend(in, front_facing, dpdx(in.uv), dpdy(in.uv));
@@ -940,7 +942,7 @@ fn fragment_blend(
 
 // Blended transparent model colour; `dx`/`dy` are the UV derivatives, taken by the caller in
 // uniform control flow.
-fn shade_blend(in: VertexOutput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+fn shade_blend(in: FragmentInput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
     if (in.visibility.x == 0u) { discard; }
     if (!front_facing && (in.visibility.x & MODEL_TWO_SIDED) == 0u) { discard; }
     var sampled = sample_model_ref(in, in.textures.x, dx, dy);
@@ -980,7 +982,7 @@ fn shade_blend(in: VertexOutput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32
 @if(ENHANCED_SHADOW)
 @fragment
 fn fragment_shadow(@if(ENHANCED_SHADOW)
-in: VertexOutput) {
+in: FragmentInput) {
     let dx = dpdx(in.uv);
     let dy = dpdy(in.uv);
     var sampled = sample_model_ref(in, in.textures.x, dx, dy);
