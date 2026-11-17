@@ -80,6 +80,13 @@ impl<S: bevy::render::render_resource::Specializer<bevy::render::render_resource
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
     ) -> Result<bevy::render::render_resource::Canonical<Self::Key>, bevy::prelude::BevyError> {
         let key = self.inner.specialize(key, descriptor)?;
+        if !self.alternate {
+            // Both stages resolve the same WESL modules and must see the same capabilities.
+            descriptor.vertex.shader_defs.push("SINGLE_SAMPLER".into());
+            if let Some(fragment) = &mut descriptor.fragment {
+                fragment.shader_defs.push("SINGLE_SAMPLER".into());
+            }
+        }
         if !self.alternate
             && let Some(fragment) = &mut descriptor.fragment
         {
@@ -94,7 +101,7 @@ impl<S: bevy::render::render_resource::Specializer<bevy::render::render_resource
                 .iter()
                 .any(|definition| match definition {
                     bevy::shader::ShaderDefVal::Bool(name, value) => {
-                        *value && gamma.contains(&&**name)
+                        *value && gamma.contains(&name.as_ref())
                     }
                     _ => false,
                 });
@@ -171,11 +178,112 @@ mod pipeline_tests {
                 fragment.targets[0].as_ref().unwrap().format,
                 render_scene::SCENE_COLOR_FORMAT
             );
-            assert!(fragment.shader_defs.is_empty());
+            assert_eq!(fragment.shader_defs, vec!["SINGLE_SAMPLER".into()]);
             assert_eq!(
                 fragment.targets[0].as_ref().unwrap().blend,
                 Some(BlendState::ALPHA_BLENDING)
             );
         }
+    }
+}
+
+/// Allocates real 2D arrays on GLES, whose target selection otherwise mistakes one layer for
+/// D2 and square multiples of six for cube maps. Padding is not part of logical layer indices.
+pub(crate) fn d2_array_layers(device: &RenderDevice, width: u32, height: u32, layers: u32) -> u32 {
+    d2_array_layers_raw(device.wgpu_device(), width, height, layers)
+}
+
+/// Raw-device counterpart for shader-pack resources that do not retain Bevy wrappers.
+pub(crate) fn d2_array_layers_raw(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    layers: u32,
+) -> u32 {
+    array_layers(
+        device.adapter_info().backend == wgpu::Backend::Gl,
+        width,
+        height,
+        layers,
+        device.limits().max_texture_array_layers,
+    )
+    .expect("2D array padding must fit the device layer limit")
+}
+
+fn array_layers(gl: bool, width: u32, height: u32, layers: u32, limit: u32) -> Option<u32> {
+    let mut physical = layers;
+    if gl {
+        physical = physical.max(2);
+        if width == height && physical.is_multiple_of(6) {
+            physical = physical.checked_add(1)?;
+        }
+    }
+    (physical <= limit).then_some(physical)
+}
+
+/// Pads allocation only, preserving descriptors that are also used for logical upload extents.
+pub(crate) fn d2_array_descriptor<'a>(
+    device: &RenderDevice,
+    descriptor: &wgpu::TextureDescriptor<'a>,
+) -> wgpu::TextureDescriptor<'a> {
+    let mut descriptor = descriptor.clone();
+    let size = &mut descriptor.size;
+    size.depth_or_array_layers =
+        d2_array_layers(device, size.width, size.height, size.depth_or_array_layers);
+    descriptor
+}
+
+/// Uploads only the authored slices of a single-mip array, never reading padding from `data`.
+pub(crate) fn d2_array_with_data(
+    device: &RenderDevice,
+    queue: &bevy::render::renderer::RenderQueue,
+    descriptor: &wgpu::TextureDescriptor<'_>,
+    data: &[u8],
+) -> bevy::render::render_resource::Texture {
+    use crate::queue_writes::ProfiledQueue as _;
+    assert_eq!(descriptor.mip_level_count, 1);
+    let mut allocation = d2_array_descriptor(device, descriptor);
+    allocation.usage |= wgpu::TextureUsages::COPY_DST;
+    let texture = device.create_texture(&allocation);
+    queue.profiled_write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        data,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(
+                descriptor.size.width
+                    * descriptor
+                        .format
+                        .block_copy_size(None)
+                        .expect("uncompressed array format"),
+            ),
+            rows_per_image: Some(descriptor.size.height),
+        },
+        descriptor.size,
+    );
+    texture
+}
+
+#[cfg(test)]
+mod array_tests {
+    use super::array_layers;
+
+    #[test]
+    fn gles_arrays_cannot_be_mistaken_for_2d_or_cube_targets() {
+        for layers in 1..=256 {
+            let padded = array_layers(true, 16, 16, layers, 256).unwrap();
+            assert!(padded >= layers && padded >= 2 && padded <= 256);
+            assert!(!padded.is_multiple_of(6));
+            assert_eq!(array_layers(false, 16, 16, layers, 256), Some(layers));
+        }
+        assert_eq!(array_layers(true, 16, 8, 6, 256), Some(6));
+        assert_eq!(array_layers(true, 1, 1, 1, 256), Some(2));
+        assert_eq!(array_layers(true, 16, 16, 6, 6), None);
+        assert_eq!(array_layers(true, 16, 16, 257, 256), None);
     }
 }

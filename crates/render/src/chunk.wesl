@@ -6,7 +6,7 @@ import render::enhanced::caster::caster_clip;
 import bevy_render::view::View;
 import render::biome_tint::{blended_biome_tint, blended_biome_tint_gamma, uniform_biome_tint_gamma};
 import render::world_projection::{section_camera_offset, camera_offset_clip};
-import render::lighting::{light_ao_factor, light_colour, lit_colour, material_ambient_occlusion, material_face_shade, point_lit_terrain_light_colour, tint_to_gamma, tint_to_linear, terrain_light_levels};
+import render::lighting::{light_ao_factor, light_colour, lit_colour, material_ambient_occlusion, material_face_shade, point_lit_terrain_light_colour, tint_to_gamma, tint_to_linear, terrain_sample_gamma, terrain_light_levels};
 @if(ALPHA_TO_COVERAGE)
 import render::lighting::{CutoutSample, cutout_alpha_array, cutout_mix};
 @if(ENHANCED)
@@ -509,62 +509,71 @@ fn apply_material_tint(
 }
 
 fn sample_texture_ref(
-    texture_ref: u32,
-    uv: vec2<f32>,
-    uv_dx: vec2<f32>,
-    uv_dy: vec2<f32>,
+    texture_ref: u32, uv: vec2<f32>, uv_dx: vec2<f32>, uv_dy: vec2<f32>,
 ) -> vec4<f32> {
     let page = texture_page(texture_ref);
     let layer = texture_layer(texture_ref);
-    @if(ENHANCED)
-    if (page == 0u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_0, 0));
-        return textureSampleGrad(block_textures_page_0, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+    @if(ENHANCED) {
+        if (page == 0u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_0, 0));
+            return textureSampleGrad(block_textures_page_0, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        }
+        if (page == 1u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_1, 0));
+            return textureSampleGrad(block_textures_page_1, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        }
+        if (page == 2u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_2, 0));
+            return textureSampleGrad(block_textures_page_2, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        }
+        if (page == 3u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_3, 0));
+            return textureSampleGrad(block_textures_page_3, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        }
+        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_4, 0));
+        return textureSampleGrad(block_textures_page_4, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
     }
-    @if(ENHANCED)
-    if (page == 1u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_1, 0));
-        return textureSampleGrad(block_textures_page_1, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+    // GLES reserves the other image globals for the nearest leaf sampler.
+    @if(!ENHANCED && SINGLE_SAMPLER) {
+        if (page == 0u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_0, 0));
+            return tint_to_gamma(textureSampleGrad(block_textures_page_0, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
+        }
+        if (page == 1u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_1, 0));
+            return tint_to_gamma(textureSampleGrad(block_textures_page_1, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
+        }
+        if (page == 2u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_2, 0));
+            return tint_to_gamma(textureSampleGrad(block_textures_page_2, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
+        }
+        if (page == 3u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_3, 0));
+            return tint_to_gamma(textureSampleGrad(block_textures_page_3, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
+        }
+        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_4, 0));
+        return tint_to_gamma(textureSampleGrad(block_textures_page_4, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
     }
-    @if(ENHANCED)
-    if (page == 2u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_2, 0));
-        return textureSampleGrad(block_textures_page_2, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+    @if(!ENHANCED && !SINGLE_SAMPLER) {
+        if (page == 0u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_0, 0));
+            return textureSampleGrad(native_leaf_textures_page_0, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        }
+        if (page == 1u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_1, 0));
+            return textureSampleGrad(native_leaf_textures_page_1, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        }
+        if (page == 2u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_2, 0));
+            return textureSampleGrad(native_leaf_textures_page_2, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        }
+        if (page == 3u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_3, 0));
+            return textureSampleGrad(native_leaf_textures_page_3, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        }
+        let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_4, 0));
+        return textureSampleGrad(native_leaf_textures_page_4, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
     }
-    @if(ENHANCED)
-    if (page == 3u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_3, 0));
-        return textureSampleGrad(block_textures_page_3, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
-    }
-    @if(ENHANCED)
-    let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_4, 0));
-    @if(ENHANCED)
-    return textureSampleGrad(block_textures_page_4, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
-    // Mips and animation frames interpolate the original encoded texture bytes.
-    @if(!ENHANCED)
-    if (page == 0u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_0, 0));
-        return textureSampleGrad(native_leaf_textures_page_0, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 1u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_1, 0));
-        return textureSampleGrad(native_leaf_textures_page_1, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 2u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_2, 0));
-        return textureSampleGrad(native_leaf_textures_page_2, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 3u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_3, 0));
-        return textureSampleGrad(native_leaf_textures_page_3, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
-    }
-    @if(!ENHANCED)
-    let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_4, 0));
-    @if(!ENHANCED)
-    return textureSampleGrad(native_leaf_textures_page_4, block_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
 }
 
 fn sample_material_texture_ref(
@@ -580,22 +589,22 @@ fn sample_material_texture_ref(
         let page = texture_page(texture_ref);
         if (page == 0u) {
             let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_0, 0));
-            return textureSampleGrad(native_leaf_textures_page_0, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+            return terrain_sample_gamma(textureSampleGrad(native_leaf_textures_page_0, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
         }
         if (page == 1u) {
             let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_1, 0));
-            return textureSampleGrad(native_leaf_textures_page_1, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+            return terrain_sample_gamma(textureSampleGrad(native_leaf_textures_page_1, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
         }
         if (page == 2u) {
             let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_2, 0));
-            return textureSampleGrad(native_leaf_textures_page_2, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+            return terrain_sample_gamma(textureSampleGrad(native_leaf_textures_page_2, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
         }
         if (page == 3u) {
             let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_3, 0));
-            return textureSampleGrad(native_leaf_textures_page_3, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+            return terrain_sample_gamma(textureSampleGrad(native_leaf_textures_page_3, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
         }
         let scale = texture_gradient_scale(texture_ref, textureDimensions(native_leaf_textures_page_4, 0));
-        return textureSampleGrad(native_leaf_textures_page_4, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale);
+        return terrain_sample_gamma(textureSampleGrad(native_leaf_textures_page_4, native_leaf_sampler, texture_cube_uv(texture_ref, uv), layer, uv_dx * scale, uv_dy * scale));
     }
     return sample_texture_ref(texture_ref, uv, uv_dx, uv_dy);
 }

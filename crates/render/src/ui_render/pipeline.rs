@@ -10,9 +10,20 @@ pub(super) struct UiPipeline {
 }
 
 impl FromWorld for UiPipeline {
-    fn from_world(_world: &mut World) -> Self {
+    fn from_world(world: &mut World) -> Self {
         let bind_group_layout = ui_bind_group_layout();
-        let descriptor = ui_pipeline_descriptor(bind_group_layout.clone());
+        let mut descriptor = ui_pipeline_descriptor(bind_group_layout.clone());
+        if world
+            .get_resource::<RenderDevice>()
+            .is_some_and(|device| device.wgpu_device().adapter_info().backend == wgpu::Backend::Gl)
+        {
+            descriptor
+                .fragment
+                .as_mut()
+                .expect("UI fragment")
+                .shader_defs
+                .push("UI_SOFTWARE_BILINEAR".into());
+        }
         Self {
             variants: Variants::new(UiPipelineSpecializer, descriptor),
             bind_group_layout,

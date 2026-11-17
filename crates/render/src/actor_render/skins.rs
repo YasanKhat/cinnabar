@@ -46,7 +46,9 @@ fn skin_array(
                 size: Extent3d {
                     width: side,
                     height: side,
-                    depth_or_array_layers: layers,
+                    depth_or_array_layers: crate::texture_compat::d2_array_layers(
+                        device, side, side, layers,
+                    ),
                 },
                 mip_level_count: 1,
                 sample_count: 1,
@@ -62,9 +64,10 @@ fn skin_array(
 }
 
 /// Creates an array binding only for a successfully allocated texture.
-fn array_view(texture: &Texture) -> TextureView {
+fn array_view(texture: &Texture, layers: u32) -> TextureView {
     texture.create_view(&TextureViewDescriptor {
         dimension: Some(TextureViewDimension::D2Array),
+        array_layer_count: Some(layers),
         ..default()
     })
 }
@@ -75,7 +78,7 @@ impl GpuSkinArrays {
         let texture = skin_array(device, 1, 1, ArtworkRawViews::default())?;
         let placeholder =
             gpu_allocation::checked(device, "actor skin placeholder view", 0, || {
-                array_view(&texture)
+                array_view(&texture, 1)
             })?;
         Some(Self {
             classes: std::array::from_fn(|_| GpuSkinClass {
@@ -224,9 +227,10 @@ impl GpuSkinArrays {
                         *admission = kept;
                     }
                 }
-                gpu.view = texture
-                    .as_ref()
-                    .map_or_else(|| self.placeholder.clone(), array_view);
+                gpu.view = texture.as_ref().map_or_else(
+                    || self.placeholder.clone(),
+                    |texture| array_view(texture, desired.len() as u32),
+                );
                 gpu.texture = texture;
                 gpu.admissions = admissions;
                 gpu.raw_views = self.raw_views;

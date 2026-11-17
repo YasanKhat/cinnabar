@@ -425,7 +425,8 @@ pub(super) fn upload_skin(
         return;
     }
     let side = render_model::actor_skin_side(&frame.skin).expect("admitted hand skin") as u32;
-    let texture = device.create_texture_with_data(
+    let texture = crate::texture_compat::d2_array_with_data(
+        device,
         queue,
         &TextureDescriptor {
             label: Some("first-person rig skin"),
@@ -445,12 +446,12 @@ pub(super) fn upload_skin(
                 &[]
             },
         },
-        TextureDataOrder::LayerMajor,
         &frame.skin,
     );
     let view = texture.create_view(&TextureViewDescriptor {
         label: Some("first-person rig skin layer"),
         dimension: Some(TextureViewDimension::D2Array),
+        array_layer_count: Some(1),
         ..default()
     });
     gpu.skin = Some(HandRigSkin {
@@ -502,7 +503,8 @@ pub(super) fn upload_atlas(
         }) {
             continue;
         }
-        let texture = device.create_texture_with_data(
+        let texture = crate::texture_compat::d2_array_with_data(
+            device,
             queue,
             &TextureDescriptor {
                 label: Some("first-person item atlas"),
@@ -522,12 +524,12 @@ pub(super) fn upload_atlas(
                     &[]
                 },
             },
-            TextureDataOrder::LayerMajor,
             &atlas.rgba8.joined(),
         );
         let view = texture.create_view(&TextureViewDescriptor {
             label: Some("first-person item atlas layers"),
             dimension: Some(TextureViewDimension::D2Array),
+            array_layer_count: Some(atlas.layers),
             ..default()
         });
         *slot = Some(HandRigAtlas {

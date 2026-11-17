@@ -10,6 +10,12 @@ fn oreui_font_edges_use_native_coverage_gamma_sampling_and_sdf_scale() {
     let Some(gpu) = Gpu::for_fixture("OreUI native text coverage") else {
         return;
     };
+    for software_bilinear in [false, true] {
+        assert_font_filter(&gpu, software_bilinear);
+    }
+}
+
+fn assert_font_filter(gpu: &Gpu, software_bilinear: bool) {
     let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("font edge coverage"),
         size: wgpu::Extent3d {
@@ -92,7 +98,7 @@ fn oreui_font_edges_use_native_coverage_gamma_sampling_and_sdf_scale() {
     for color in [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]] {
         let source = format!(
             "{}\n{}",
-            ui_shader::source(include_str!("../../src/ui.wgsl")),
+            ui_shader::test_source(include_str!("../../src/ui.wgsl"), software_bilinear),
             vertex(color, u32::from(assets::FONT_STYLE_COVERAGE_GAMMA) | 8, 0.0)
         );
         let pixels = gpu.render(
@@ -128,7 +134,7 @@ fn oreui_font_edges_use_native_coverage_gamma_sampling_and_sdf_scale() {
     for (texels_per_pixel, expected) in [(1.0, 128u8), (2.0, 96), (4.0, 80)] {
         let source = format!(
             "{}\n{}",
-            ui_shader::source(include_str!("../../src/ui.wgsl")),
+            ui_shader::test_source(include_str!("../../src/ui.wgsl"), software_bilinear),
             vertex([1.0; 3], flags, texels_per_pixel)
         );
         let pixels = gpu.render(
@@ -168,7 +174,7 @@ fn oreui_font_edges_use_native_coverage_gamma_sampling_and_sdf_scale() {
     for texels_per_pixel in [0.5, 1.0, 2.0, 4.0] {
         let source = format!(
             "{}\n{}",
-            ui_shader::source(include_str!("../../src/ui.wgsl")),
+            ui_shader::test_source(include_str!("../../src/ui.wgsl"), software_bilinear),
             vertex([1.0; 3], flags, texels_per_pixel)
         );
         let pixels = gpu.render(

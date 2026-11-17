@@ -28,9 +28,9 @@ use bevy::{
             DepthStencilState, Extent3d, FilterMode, FragmentState, PipelineCache,
             RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, Sampler,
             SamplerBindingType, SamplerDescriptor, ShaderStages, Specializer, SpecializerKey,
-            Texture, TextureDataOrder, TextureDescriptor, TextureDimension, TextureFormat,
-            TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor,
-            TextureViewDimension, Variants, VertexState,
+            Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
+            TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, Variants,
+            VertexState,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         sync_world::MainEntity,
@@ -137,7 +137,8 @@ fn texture_array(
     layers: u32,
     pixels: &[u8],
 ) -> (Texture, TextureView) {
-    let texture = device.create_texture_with_data(
+    let texture = crate::texture_compat::d2_array_with_data(
+        device,
         queue,
         &TextureDescriptor {
             label: Some("screen overlay textures"),
@@ -153,12 +154,12 @@ fn texture_array(
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         },
-        TextureDataOrder::LayerMajor,
         pixels,
     );
     let view = texture.create_view(&TextureViewDescriptor {
         label: Some("screen overlay texture layers"),
         dimension: Some(TextureViewDimension::D2Array),
+        array_layer_count: Some(layers),
         ..default()
     });
     (texture, view)

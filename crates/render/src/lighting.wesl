@@ -96,6 +96,12 @@ fn tint_to_gamma(rgba: vec4<f32>) -> vec4<f32> {
     return vec4(select(12.92 * linear, 1.055 * pow(linear, vec3(1.0 / 2.4)) - 0.055, linear > vec3(0.0031308)), rgba.a);
 }
 
+// Without alternate views the native byte-colour bindings are sRGB textures as well.
+fn terrain_sample_gamma(sampled: vec4<f32>) -> vec4<f32> {
+    @if(SINGLE_SAMPLER) return tint_to_gamma(sampled);
+    @if(!SINGLE_SAMPLER) return sampled;
+}
+
 fn tint_to_linear(rgba: vec4<f32>) -> vec4<f32> {
     let gamma = rgba.rgb;
     return vec4(select(gamma / 12.92, pow((gamma + 0.055) / 1.055, vec3(2.4)), gamma > vec3(0.04045)), rgba.a);

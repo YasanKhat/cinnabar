@@ -247,11 +247,7 @@ fn every_shader_parses_and_validates() {
         let source = if name == "ui.wgsl" {
             // Exercise the exact production constructor, including its renderer-owned style
             // constant injection, without publishing a test-only runtime API.
-            let shader = ui_shader::from_wgsl(&raw, path.to_string_lossy());
-            let bevy::shader::Source::Wgsl(source) = shader.source else {
-                panic!("UI shader constructor must produce WGSL");
-            };
-            standalone(&source)
+            standalone(&ui_shader::test_source(&raw, false))
         } else if name == "motion_blur.wgsl" {
             // The production constructor injects the shared motion tile size.
             standalone(&motion_blur_shader::source(&raw, false))
@@ -473,4 +469,70 @@ fn direct_terrain_unit_shaders_validate_with_and_without_msaa_cutout() {
             );
         }
     }
+}
+
+/// Matches naga's GLES restriction using its resolved, transitive image/sampler usage,
+/// including calls imported from other WESL modules in the transparent terrain pipeline.
+fn assert_single_sampler_per_image(source: &str, label: &str) {
+    let module = naga::front::wgsl::parse_str(source).expect("specialized shader parses");
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .expect("specialized shader validates");
+    for (index, entry) in module.entry_points.iter().enumerate() {
+        let mut samplers = std::collections::HashMap::new();
+        for pair in &info.get_entry_point(index).sampling_set {
+            if let Some(previous) = samplers.insert(pair.image, pair.sampler) {
+                assert_eq!(
+                    previous, pair.sampler,
+                    "{label}: {} pairs {:?} with multiple samplers",
+                    entry.name, module.global_variables[pair.image].name
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn gles_terrain_programs_use_one_sampler_per_image() {
+    for extra in [
+        &[][..],
+        &["ALPHA_TO_COVERAGE"][..],
+        &["PACKED_TERRAIN"][..],
+        &["PACKED_TERRAIN", "ALPHA_TO_COVERAGE"][..],
+        &["ENHANCED"][..],
+        &["ENHANCED", "ALPHA_TO_COVERAGE"][..],
+        &["ENHANCED_SHADOW"][..],
+    ] {
+        let mut definitions = vec!["SINGLE_SAMPLER"];
+        definitions.extend_from_slice(extra);
+        for (name, raw) in [
+            ("chunk", include_str!("../../src/chunk.wesl")),
+            ("model", include_str!("../../src/model.wesl")),
+            ("liquid", include_str!("../../src/liquid.wesl")),
+            (
+                "transparent",
+                include_str!("../../src/transparent_terrain.wesl"),
+            ),
+        ] {
+            assert_single_sampler_per_image(&shader_source::composed(raw, &definitions), name);
+        }
+    }
+}
+
+#[test]
+fn ui_software_bilinear_preserves_the_single_sampler_contract() {
+    let raw = include_str!("../../src/ui.wgsl");
+    // Validate both filter implementations. The hardware variant may use two samplers.
+    let hardware = ui_shader::test_source(raw, false);
+    let module = naga::front::wgsl::parse_str(&hardware).expect("hardware UI parses");
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .expect("hardware UI validates");
+    assert_single_sampler_per_image(&ui_shader::test_source(raw, true), "software UI");
 }

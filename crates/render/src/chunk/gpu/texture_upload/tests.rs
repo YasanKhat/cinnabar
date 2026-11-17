@@ -57,3 +57,21 @@ fn atlas_views_share_each_uploaded_texture_page() {
     }
     assert_eq!(stats.queue_upload_bytes, uploaded_bytes);
 }
+
+#[test]
+fn native_atlas_views_without_reinterpretation_keep_the_srgb_base() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let device = RenderDevice::from(device);
+    let queue = RenderQueue::new(queue);
+    let (prepared, _) =
+        build_chunk_texture_assets(&ChunkTextureAssets::default(), &device, &queue, false).unwrap();
+    for (texture, view) in prepared._textures.iter().zip(&prepared.native_leaf_views) {
+        assert_eq!(texture.format(), TextureFormat::Rgba8UnormSrgb);
+        assert_eq!(view.texture(), &**texture);
+        // The production creation above must succeed without a nonempty view_formats list.
+        assert_eq!(
+            crate::texture_compat::encoded_format(texture.format(), false),
+            texture.format()
+        );
+    }
+}

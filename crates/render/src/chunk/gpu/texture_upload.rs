@@ -431,16 +431,20 @@ pub(in crate::chunk) fn build_chunk_texture_assets(
         contents: bytemuck::cast_slice(enhanced_texture_refs),
         usage: BufferUsages::STORAGE,
     });
-    // Current atlas upload retains RGBA8_UNORM.
-    // A view of each existing allocation preserves gamma-space filtering for
-    // world leaves without duplicating texture memory or changing other art.
+    // Share each uploaded sRGB allocation. Native adapters reinterpret encoded bytes;
+    // single-format adapters keep sRGB views and restore gamma in the terrain shaders.
     let native_leaf_views = textures
         .iter()
-        .map(|texture| {
+        .zip(&terrain_pages)
+        .map(|(texture, page)| {
             texture.create_view(&TextureViewDescriptor {
                 label: Some("native world leaf atlas view"),
-                format: Some(TextureFormat::Rgba8Unorm),
+                format: Some(crate::texture_compat::encoded_format(
+                    texture.format(),
+                    alternate_views,
+                )),
                 dimension: Some(TextureViewDimension::D2Array),
+                array_layer_count: Some(page.layers),
                 ..Default::default()
             })
         })
@@ -616,7 +620,12 @@ fn upload_texture_page_format(
         size: Extent3d {
             width: texture_array.mips.first().map_or(1, |mip| mip.size),
             height: texture_array.mips.first().map_or(1, |mip| mip.size),
-            depth_or_array_layers: texture_array.layers,
+            depth_or_array_layers: crate::texture_compat::d2_array_layers(
+                render_device,
+                texture_array.mips[0].size,
+                texture_array.mips[0].size,
+                texture_array.layers,
+            ),
         },
         mip_level_count,
         sample_count: 1,

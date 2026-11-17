@@ -1,3 +1,21 @@
+// Keep the nearest sampler for pixel art; GLES cannot pair one image with two samplers.
+fn ui_bilinear(uv: vec2<f32>, page: i32) -> vec4<f32> {
+#ifdef UI_SOFTWARE_BILINEAR
+    let size = vec2<i32>(textureDimensions(ui_pages, 0));
+    let point = uv * vec2<f32>(size) - vec2(0.5);
+    let base = vec2<i32>(floor(point));
+    let weight = fract(point);
+    let hi = size - vec2(1);
+    let a = textureLoad(ui_pages, clamp(base, vec2(0), hi), page, 0);
+    let b = textureLoad(ui_pages, clamp(base + vec2(1, 0), vec2(0), hi), page, 0);
+    let c = textureLoad(ui_pages, clamp(base + vec2(0, 1), vec2(0), hi), page, 0);
+    let d = textureLoad(ui_pages, clamp(base + vec2(1, 1), vec2(0), hi), page, 0);
+    return mix(mix(a, b, weight.x), mix(c, d, weight.x), weight.y);
+#else
+    return textureSampleLevel(ui_pages, ui_linear_sampler, uv, page, 0.0);
+#endif
+}
+
 struct UiViewport {
     viewport_size: vec2<f32>,
     time_seconds: f32,
@@ -52,7 +70,7 @@ fn sample_repeat(input: UiVertexOutput, dimensions: vec2<f32>) -> vec4<f32> {
     let uv = decoded.xy;
     let linear = (input.style_flags & STYLE_BILINEAR) != 0u;
     if linear {
-        return textureSampleLevel(ui_pages, ui_linear_sampler, uv / dimensions, i32(input.texture_page), 0.0);
+        return ui_bilinear(uv / dimensions, i32(input.texture_page));
     }
     return textureSampleLevel(ui_pages, ui_sampler, uv / dimensions, i32(input.texture_page), 0.0);
 }
@@ -194,7 +212,7 @@ fn sample_outline(uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, dimensions: vec2<
         for (var x = 0u; x < u32(grid.x); x++) {
             let offset = (vec2<f32>(f32(x), f32(y)) + vec2<f32>(0.5)) / grid - vec2<f32>(0.5);
             let sample_uv = (uv + dx * offset.x + dy * offset.y) / dimensions;
-            total += textureSampleLevel(ui_pages, ui_linear_sampler, sample_uv, i32(page), 0.0);
+            total += ui_bilinear(sample_uv, i32(page));
         }
     }
     return total / (grid.x * grid.y);
@@ -273,7 +291,7 @@ fn shade_ui(input: UiVertexOutput, direct: bool, front_facing: bool) -> vec4<f32
         let level = max(0.0, log2(max(footprint, 1.0)));
         sample = textureSampleLevel(ui_pages, ui_sampler, normalized_uv, i32(input.texture_page), level);
     } else if sdf_font || (input.style_flags & STYLE_BILINEAR) != 0u {
-        sample = textureSampleLevel(ui_pages, ui_linear_sampler, normalized_uv, i32(input.texture_page), 0.0);
+        sample = ui_bilinear(normalized_uv, i32(input.texture_page));
     } else {
         sample = textureSampleLevel(ui_pages, ui_sampler, normalized_uv, i32(input.texture_page), 0.0);
     }

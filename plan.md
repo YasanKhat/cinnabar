@@ -2107,7 +2107,13 @@ Flathub submission remain incomplete.
   End-to-end GL shader, surface and driver acceptance is incomplete; devices lacking required
   storage buffers or other mandatory renderer capabilities remain unsupported. Alternate views
   now use a single-format fallback, absent sample shading disables MSAA before view preparation,
-  and GL always selects direct terrain draws and CPU culling. Native GL presentation and visual
+  and GL always selects direct terrain draws and CPU culling. GL UI filtering and terrain image
+  bindings avoid multiple samplers per image; single-format terrain restores gamma after sRGB
+  sampling. Array allocation padding avoids GLES D2/cube target inference while uploads and
+  CPU layer indices remain logical. Labels match their single-format target and composite.
+  Stable 1.99 locked default/no-default release compilation remains blocked by dependency access
+  in the current environment; Intel HD 4600 post-initialization visual acceptance is incomplete.
+  Native GL presentation and visual
   acceptance, including dependency-owned non-sRGB-only surface configuration, remain incomplete. No 400 FPS
   performance claim is verified. Actor coverage partitioning uses reusable classification buffers
   and sorted membership keys instead of sorting instances with repeated linear lookups. Shadow

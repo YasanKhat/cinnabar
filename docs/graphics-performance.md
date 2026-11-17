@@ -21,7 +21,15 @@ fragment storage buffers. Alternate texture views and multisampled shading are
 optional: adapters without alternate views keep a single matching texture/view
 format and ordinary world pipelines use linear blending into the sRGB attachment.
 Adapters without multisampled shading use one sample before view/depth/pipeline
-preparation. GL always uses CPU culling and direct terrain draws. Exposing the API does not
+preparation. GL always uses CPU culling and direct terrain draws.
+GL UI uses four clamped level-zero loads for bilinear filtering while retaining
+nearest sampling for crisp sprites. Terrain assigns each image global to one
+sampler; native sRGB atlas views restore encoded RGB in shaders, preserving alpha.
+The label overlay uses the matching single-format target and linear composite.
+GLES array allocations pad one-layer and square six-multiple textures without
+changing their authored layer indices or reading extra upload data. Padding must
+fit the device's array-layer limit; unsupported extents fail rather than truncate
+logical layers. Exposing the API does not
 make older GPUs compatible. Saved Video choices use the existing automatic
 fallback and startup crash recovery; an explicit `WGPU_BACKEND` override is for
 diagnostics and does not promise automatic fallback. Remove it to restore Auto.

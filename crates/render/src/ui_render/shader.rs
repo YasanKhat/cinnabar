@@ -160,3 +160,27 @@ pub(crate) fn source(raw: &str) -> String {
 pub(super) fn from_wgsl(raw: &str, path: impl Into<String>) -> Shader {
     crate::shader_safety::from_wgsl(source(raw), path)
 }
+
+/// Selects the UI filter branch for fixtures that feed WGSL directly to naga/wgpu rather
+/// than Bevy's shader preprocessor. Production keeps both branches until specialization.
+#[cfg(test)]
+pub(crate) fn test_source(raw: &str, software_bilinear: bool) -> String {
+    let source = source(raw);
+    let (before, conditional) = source
+        .split_once("#ifdef UI_SOFTWARE_BILINEAR\n")
+        .expect("UI filter branch");
+    let (software, conditional) = conditional
+        .split_once("#else\n")
+        .expect("hardware filter branch");
+    let (hardware, after) = conditional
+        .split_once("#endif\n")
+        .expect("end UI filter branch");
+    format!(
+        "{before}{}{after}",
+        if software_bilinear {
+            software
+        } else {
+            hardware
+        }
+    )
+}

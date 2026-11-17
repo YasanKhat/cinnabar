@@ -182,7 +182,12 @@ impl AuthoredUpload {
                 size: Extent3d {
                     width: array.mips[0].size,
                     height: array.mips[0].size,
-                    depth_or_array_layers: array.layers,
+                    depth_or_array_layers: crate::texture_compat::d2_array_layers(
+                        device,
+                        array.mips[0].size,
+                        array.mips[0].size,
+                        array.layers,
+                    ),
                 },
                 mip_level_count: array.mips.len() as u32,
                 sample_count: 1,
@@ -200,6 +205,7 @@ impl AuthoredUpload {
             textures[index].create_view(&TextureViewDescriptor {
                 label: Some("staged authored Enhanced terrain view"),
                 dimension: Some(TextureViewDimension::D2Array),
+                array_layer_count: Some(arrays[index].layers),
                 ..Default::default()
             })
         });

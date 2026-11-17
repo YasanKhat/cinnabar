@@ -191,7 +191,11 @@ fn fallback_texture(
             size: Extent3d {
                 width: 1,
                 height: 1,
-                depth_or_array_layers: 1,
+                depth_or_array_layers: if dimension == TextureViewDimension::D2Array {
+                    crate::texture_compat::d2_array_layers(device, 1, 1, 1)
+                } else {
+                    1
+                },
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -351,7 +355,9 @@ impl ShadowTargets {
                 size: Extent3d {
                     width: resolution,
                     height: resolution,
-                    depth_or_array_layers: cascades,
+                    depth_or_array_layers: crate::texture_compat::d2_array_layers(
+                        device, resolution, resolution, cascades,
+                    ),
                 },
                 mip_level_count: 1,
                 sample_count: 1,
@@ -364,6 +370,7 @@ impl ShadowTargets {
         let array = texture.create_view(&TextureViewDescriptor {
             label: Some("enhanced shadow array view"),
             dimension: Some(TextureViewDimension::D2Array),
+            array_layer_count: Some(cascades),
             ..default()
         });
         let layers = (0..cascades)

@@ -85,3 +85,26 @@ fn nametag_multisample_composite_fragment(@builtin(position) position: vec4<f32>
     }
     return colour / f32(count);
 }
+
+
+// A single-format sRGB label layer samples as linear premultiplied colour.
+@fragment
+fn nametag_linear_composite_fragment(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+    let pixel = vec2<i32>(position.xy);
+    let ui = textureLoad(ui_layer, pixel, 0);
+    let under = textureLoad(scene, pixel, 0);
+    return ui + under * (1.0 - ui.a);
+}
+
+@fragment
+fn nametag_linear_multisample_composite_fragment(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+    let pixel = vec2<i32>(position.xy);
+    let under = textureLoad(scene, pixel, 0);
+    let count = textureNumSamples(nametag_samples);
+    var colour = vec4<f32>(0.0);
+    for (var sample = 0u; sample < count; sample += 1u) {
+        let ui = textureLoad(nametag_samples, pixel, i32(sample));
+        colour += ui + under * (1.0 - ui.a);
+    }
+    return colour / f32(count);
+}
