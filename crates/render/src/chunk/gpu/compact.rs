@@ -127,12 +127,7 @@ impl CompactTerrain {
 
 /// Installs copies after staged terrain uploads and before any camera reads the tables.
 pub(in crate::chunk) fn install(world: &mut World) {
-    if world
-        .resource::<RenderDevice>()
-        .limits()
-        .max_storage_buffers_per_shader_stage
-        >= required_vertex_storage_buffers()
-    {
+    if !super::super::pipeline::layouts::uses_compact_terrain(world.resource::<RenderDevice>()) {
         return;
     }
     let _ = world.try_schedule_scope(RenderGraph, |_, graph| {

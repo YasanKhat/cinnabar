@@ -12,6 +12,7 @@ pub(in crate::chunk) fn prepare_chunk_texture_assets(
     mut arena: ResMut<ChunkGpuArena>,
     assets: Res<ChunkTextureAssets>,
     render_device: Res<RenderDevice>,
+    adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
     render_queue: Res<RenderQueue>,
     mut gpu_assets: ResMut<ChunkGpuTextureAssets>,
     mut stats: ResMut<ChunkTextureUploadStats>,
@@ -19,6 +20,12 @@ pub(in crate::chunk) fn prepare_chunk_texture_assets(
     admission: Option<Res<render_scene::startup_work::WorldWorkAdmission>>,
     mut coverage: Option<ResMut<TerrainCoverage>>,
 ) {
+    let alternate_views = adapter.as_ref().map_or_else(
+        || crate::texture_compat::device_alternate_views(&render_device),
+        |adapter| {
+            crate::texture_compat::alternate_views(adapter.get_downlevel_capabilities().flags)
+        },
+    );
     let identity = assets.binding_identity();
     poll_bootstrap_atlas(&assets, &mut gpu_assets, &mut stats, &render_device);
     if gpu_assets
@@ -153,7 +160,13 @@ pub(in crate::chunk) fn prepare_chunk_texture_assets(
             gpu_assets.bootstrap = Some(BootstrapTextures {
                 identity,
                 worker: std::thread::spawn(move || {
-                    build_carrier_texture_assets(&assets, previous.as_ref(), &device, &queue)
+                    build_carrier_texture_assets(
+                        &assets,
+                        previous.as_ref(),
+                        &device,
+                        &queue,
+                        alternate_views,
+                    )
                 }),
             });
             return;
@@ -165,6 +178,7 @@ pub(in crate::chunk) fn prepare_chunk_texture_assets(
             &mut stats,
             &render_device,
             &render_queue,
+            alternate_views,
         );
     }
     #[cfg(feature = "enhanced")]
@@ -217,21 +231,25 @@ pub(in crate::chunk) fn prepare_chunk_texture_assets(
         );
     let previous = gpu_assets.prepared.clone();
     let work = move || {
-        let result = build_carrier_texture_assets(&candidate, previous.as_ref(), &device, &queue)
-            .and_then(|(atlas, stats)| {
-                let geometry = match geometry {
-                    Some(instances) => Some({
-                        let _zone = bevy::log::info_span!(
-                            "pack_apply.gpu_geometry",
-                            chunks = instances.len()
-                        )
-                        .entered();
-                        PreparedResourceGeometry::build(&instances, candidate, device, queue, view)?
-                    }),
-                    None => None,
-                };
-                Some((atlas, stats, geometry))
-            });
+        let result = build_carrier_texture_assets(
+            &candidate,
+            previous.as_ref(),
+            &device,
+            &queue,
+            alternate_views,
+        )
+        .and_then(|(atlas, stats)| {
+            let geometry = match geometry {
+                Some(instances) => Some({
+                    let _zone =
+                        bevy::log::info_span!("pack_apply.gpu_geometry", chunks = instances.len())
+                            .entered();
+                    PreparedResourceGeometry::build(&instances, candidate, device, queue, view)?
+                }),
+                None => None,
+            };
+            Some((atlas, stats, geometry))
+        });
         let _ = sender.send(result);
     };
     #[cfg(not(target_arch = "wasm32"))]
@@ -293,6 +311,7 @@ fn rebuild_bootstrap_atlas(
     stats: &mut ChunkTextureUploadStats,
     render_device: &RenderDevice,
     render_queue: &RenderQueue,
+    alternate_views: bool,
 ) {
     #[cfg(feature = "enhanced")]
     let identity = assets.binding_identity();
@@ -330,6 +349,7 @@ fn rebuild_bootstrap_atlas(
         gpu_assets.prepared.as_ref(),
         render_device,
         render_queue,
+        alternate_views,
     ) {
         gpu_assets.prepared = Some(prepared);
         *stats = uploaded;

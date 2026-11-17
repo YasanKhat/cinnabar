@@ -85,7 +85,8 @@ impl Specializer<RenderPipeline> for Specialization {
 
 #[derive(Resource)]
 struct Pipelines {
-    variants: [Variants<RenderPipeline, Specialization>; 5],
+    variants:
+        [Variants<RenderPipeline, crate::texture_compat::ViewFormatSpecializer<Specialization>>; 5],
     supported: bool,
 }
 impl FromWorld for Pipelines {
@@ -96,11 +97,15 @@ impl FromWorld for Pipelines {
         transparent.vertex.entry_point = Some("vertex_blocks".into());
         transparent.vertex.shader_defs.push("MOD_BLOCKS".into());
         Self {
-            variants: descriptors.map(|descriptor| Variants::new(Specialization, descriptor)),
-            supported: world.get_resource::<RenderDevice>().is_some_and(|device| {
-                device.limits().max_storage_buffers_per_shader_stage
-                    >= required_vertex_storage_buffers()
+            variants: descriptors.map(|descriptor| {
+                Variants::new(
+                    crate::texture_compat::ViewFormatSpecializer::new(Specialization, world),
+                    descriptor,
+                )
             }),
+            supported: world
+                .get_resource::<RenderDevice>()
+                .is_some_and(|device| !super::pipeline::layouts::uses_compact_terrain(device)),
         }
     }
 }

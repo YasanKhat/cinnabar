@@ -16,12 +16,16 @@ fn cube_and_cropped_model_faces_preserve_exponents_before_light_interpolation() 
         .find("    let ao = material_ambient_occlusion(")
         .unwrap();
     let lighting = &production[lighting_start..][..production[lighting_start..]
-        .find("    out.world_position = world;")
-        .unwrap()];
+        .find("    out.world_ao = vec4(world, out.world_ao.w);")
+        .unwrap()]
+        .replace("out.normal_sky.w", "out.sky_light")
+        .replace("out.world_ao.w", "out.ao");
     let cube = include_str!("../../src/chunk.wesl");
     let cube_lighting = &cube[cube
         .find("    let ao = material_ambient_occlusion(")
-        .unwrap()..cube.find("    // Native RenderChunk").unwrap()];
+        .unwrap()..cube.find("    // Native RenderChunk").unwrap()]
+        .replace("out.world_sky.w", "out.sky_light")
+        .replace("out.local_ao.w", "out.ao");
     let source = format!(
         "{}\n{FIXTURE}\n{coordinates}\n{LIGHTING_FIXTURE}\n{lighting}\nreturn out;\n}}\n{CUBE_LIGHTING_FIXTURE}\n{cube_lighting}\nreturn out;\n}}\n{LIGHTING_WITNESS}",
         include_str!("../../src/material.wesl"),
@@ -130,7 +134,7 @@ struct Witness { @builtin(position) position: vec4<f32> }
 const LIGHTING_FIXTURE: &str = r#"
 struct LightingOutput {
     normal: vec3<f32>, lighting: vec3<f32>, sky_light: f32,
-    ambient_occlusion: f32, native_light_levels: vec2<f32>, native_ao_face: f32,
+    ao: f32, native_light_levels: vec2<f32>,
 }
 /// Selects constant samples or four distinct corner samples on the same face.
 fn model_light_sample(quad: ModelQuad, corner: u32) -> u32 {
@@ -157,10 +161,14 @@ fn patch_lighting(quad: ModelQuad, corner: u32, exponent: u32) -> LightingOutput
     let is_lily_pad = false;
     let pad_shade = 1.0;
     var out: LightingOutput;
-    out.normal = vec3(0.0, 0.0, -1.0);
+    let normal = vec3(0.0, 0.0, -1.0);
 "#;
 
 const LIGHTING_WITNESS: &str = r#"
+fn lighting_value(value: LightingOutput) -> f32 {
+    @if(ENHANCED) return value.lighting.x;
+    @if(!ENHANCED) return value.ao;
+}
 @vertex fn lighting_vertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
     let uv = vec2(f32((index << 1u) & 2u), f32(index & 2u));
     return vec4(uv * 2.0 - vec2(1.0), 0.5, 1.0);
@@ -171,19 +179,19 @@ const LIGHTING_WITNESS: &str = r#"
         for (var encoded = 0u; encoded < 2u; encoded += 1u) {
             let exponent = bitcast<u32>(select(1.0, 0.8, encoded != 0u));
             let face = ModelQuad(0u, 5u | (constant_samples << 8u));
-            let a = patch_lighting(face, 0u, exponent).lighting.x;
-            let b = patch_lighting(face, 1u, exponent).lighting.x;
-            let c = patch_lighting(face, 2u, exponent).lighting.x;
-            let d = patch_lighting(face, 3u, exponent).lighting.x;
+            let a = lighting_value(patch_lighting(face, 0u, exponent));
+            let b = lighting_value(patch_lighting(face, 1u, exponent));
+            let c = lighting_value(patch_lighting(face, 2u, exponent));
+            let d = lighting_value(patch_lighting(face, 3u, exponent));
             @if(ENHANCED)
             for (var corner = 0u; corner < 4u; corner += 1u) {
                 let sample = model_light_sample(face, corner);
                 let ao = array(0.2, 0.4, 0.6, 0.9)[sample >> 8u];
                 let expected = pow(ao * 0.8, select(1.0, 0.8, encoded != 0u));
                 let actual = cube_lighting(sample, exponent);
-                valid = valid && all(abs(actual.lighting - vec3(expected)) < vec3(0.00001));
+                valid = valid && abs(lighting_value(actual) - expected) < 0.00001;
                 valid = valid && abs(actual.lighting.x - array(a, b, c, d)[corner]) < 0.00001;
-                valid = valid && abs(actual.ambient_occlusion - ao) < 0.00001;
+                valid = valid && abs(actual.ao - ao) < 0.00001;
             }
             for (var tile = 0u; tile < 9u; tile += 1u) {
                 let tile_quad = ModelQuad(tile | (16u << 4u), face.quad_flags);
@@ -191,9 +199,9 @@ const LIGHTING_WITNESS: &str = r#"
                     let point = patch_coordinate(tile_quad, corner);
                     let expected = mix(mix(a, b, point.x), mix(d, c, point.x), point.y);
                     let actual = patch_lighting(tile_quad, corner, exponent);
-                    valid = valid && all(abs(actual.lighting - vec3(expected)) < vec3(0.00001));
+                    valid = valid && abs(lighting_value(actual) - expected) < 0.00001;
                     @if(!ENHANCED)
-                    valid = valid && abs(actual.native_ao_face - expected) < 0.00001;
+                    valid = valid && abs(actual.ao - expected) < 0.00001;
                 }
             }
         }

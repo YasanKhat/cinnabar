@@ -16,7 +16,7 @@ fn native_authored_stripes_publish_complete_mips_and_preserve_carrier_resources(
     let queue = RenderQueue::new(queue);
     let base = ChunkTextureAssets::default();
     let (mut prepared, mut stats) =
-        crate::chunk::gpu::texture_upload::build_chunk_texture_assets(&base, &device, &queue)
+        crate::chunk::gpu::texture_upload::build_chunk_texture_assets(&base, &device, &queue, true)
             .unwrap();
     let carrier_texture = prepared._textures[0].id();
     let carrier_materials = prepared.material_buffer.id();

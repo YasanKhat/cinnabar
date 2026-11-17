@@ -269,7 +269,16 @@ impl<'a> ConstantBuilder<'a> {
                 } else {
                     size[1].max(1)
                 },
-                depth_or_array_layers: layers.max(1),
+                depth_or_array_layers: if view_dimension == wgpu::TextureViewDimension::D2Array {
+                    crate::texture_compat::d2_array_layers_raw(
+                        &self.gpu.device,
+                        size[0].max(1),
+                        size[1].max(1),
+                        layers.max(1),
+                    )
+                } else {
+                    layers.max(1)
+                },
             },
             mip_level_count: 1,
             sample_count: 1,

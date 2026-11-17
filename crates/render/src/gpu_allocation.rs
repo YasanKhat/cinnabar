@@ -362,13 +362,40 @@ pub(crate) fn texture_with_data(
 ) -> Option<Texture> {
     debug_assert_eq!(descriptor.mip_level_count, 1);
     let texture = texture(device, descriptor)?;
+    upload_texture_data(device, queue, &texture, descriptor, data)?;
+    Some(texture)
+}
+
+/// Creates a recoverable array while preserving the logical upload extent.
+pub(crate) fn array_texture_with_data(
+    device: &RenderDevice,
+    queue: &RenderQueue,
+    descriptor: &TextureDescriptor<'_>,
+    data: &[u8],
+) -> Option<Texture> {
+    debug_assert_eq!(descriptor.mip_level_count, 1);
+    let allocation = crate::texture_compat::d2_array_descriptor(device, descriptor);
+    // Finish allocation validation before queueing a write against the texture.
+    let texture = texture(device, &allocation)?;
+    upload_texture_data(device, queue, &texture, descriptor, data)?;
+    Some(texture)
+}
+
+/// Writes logical slices only; a padded allocation never increases the required source bytes.
+fn upload_texture_data(
+    device: &RenderDevice,
+    queue: &RenderQueue,
+    texture: &Texture,
+    descriptor: &TextureDescriptor<'_>,
+    data: &[u8],
+) -> Option<()> {
     let size = descriptor.size;
     let block = descriptor.format.block_copy_size(None)?;
     let label = format!("{} upload", descriptor.label.unwrap_or("unlabeled texture"));
     checked(device, &label, data.len() as u64, || {
         queue.profiled_write_texture(
             TexelCopyTextureInfo {
-                texture: &texture,
+                texture,
                 mip_level: 0,
                 origin: Origin3d::ZERO,
                 aspect: TextureAspect::All,
@@ -381,8 +408,7 @@ pub(crate) fn texture_with_data(
             },
             size,
         );
-    })?;
-    Some(texture)
+    })
 }
 
 /// Checks creation before any mapping, copying, binding, or upload can use the buffer.

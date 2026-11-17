@@ -4,8 +4,30 @@ struct Vertex {
     data: vec4<f32>, shape: vec4<f32>,
 }
 struct Instance { transform: mat4x4<f32>, tint: vec4<f32>, line: vec4<f32>, params: array<vec4<f32>, 4> }
-@group(0) @binding(1) var<storage, read> vertices: array<Vertex>;
-@group(0) @binding(2) var<storage, read> instances: array<Instance>;
+@group(0) @binding(1) var<storage, read> vertices: array<vec4<f32>>;
+
+// Raw storage preserves the 128-byte CPU record without a std430 struct block.
+fn load_vertices(index: u32) -> Vertex {
+    let base = index * 8u;
+    return Vertex(vec4<f32>(vertices[base + 0u].x, vertices[base + 0u].y, vertices[base + 0u].z, vertices[base + 0u].w),
+        vec4<f32>(vertices[base + 1u].x, vertices[base + 1u].y, vertices[base + 1u].z, vertices[base + 1u].w),
+        vec4<f32>(vertices[base + 2u].x, vertices[base + 2u].y, vertices[base + 2u].z, vertices[base + 2u].w),
+        vec4<f32>(vertices[base + 3u].x, vertices[base + 3u].y, vertices[base + 3u].z, vertices[base + 3u].w),
+        vec4<f32>(vertices[base + 4u].x, vertices[base + 4u].y, vertices[base + 4u].z, vertices[base + 4u].w),
+        vec4<f32>(vertices[base + 5u].x, vertices[base + 5u].y, vertices[base + 5u].z, vertices[base + 5u].w),
+        vec4<f32>(vertices[base + 6u].x, vertices[base + 6u].y, vertices[base + 6u].z, vertices[base + 6u].w),
+        vec4<f32>(vertices[base + 7u].x, vertices[base + 7u].y, vertices[base + 7u].z, vertices[base + 7u].w));
+}
+@group(0) @binding(2) var<storage, read> instances: array<vec4<f32>>;
+
+// Raw storage preserves the 160-byte CPU record without a std430 struct block.
+fn load_instances(index: u32) -> Instance {
+    let base = index * 10u;
+    return Instance(mat4x4<f32>(vec4<f32>(instances[base + 0u].x, instances[base + 0u].y, instances[base + 0u].z, instances[base + 0u].w), vec4<f32>(instances[base + 1u].x, instances[base + 1u].y, instances[base + 1u].z, instances[base + 1u].w), vec4<f32>(instances[base + 2u].x, instances[base + 2u].y, instances[base + 2u].z, instances[base + 2u].w), vec4<f32>(instances[base + 3u].x, instances[base + 3u].y, instances[base + 3u].z, instances[base + 3u].w)),
+        vec4<f32>(instances[base + 4u].x, instances[base + 4u].y, instances[base + 4u].z, instances[base + 4u].w),
+        vec4<f32>(instances[base + 5u].x, instances[base + 5u].y, instances[base + 5u].z, instances[base + 5u].w),
+        array<vec4<f32>, 4>(vec4<f32>(instances[base + 6u].x, instances[base + 6u].y, instances[base + 6u].z, instances[base + 6u].w), vec4<f32>(instances[base + 7u].x, instances[base + 7u].y, instances[base + 7u].z, instances[base + 7u].w), vec4<f32>(instances[base + 8u].x, instances[base + 8u].y, instances[base + 8u].z, instances[base + 8u].w), vec4<f32>(instances[base + 9u].x, instances[base + 9u].y, instances[base + 9u].z, instances[base + 9u].w)));
+}
 const MITER_LIMIT: f32 = 4.0;
 struct Pair { a: vec4<f32>, b: vec4<f32>, ta: f32, tb: f32, valid: bool }
 
@@ -49,7 +71,7 @@ fn inner_miter(n0: vec2<f32>, n1: vec2<f32>, lengths: vec2<f32>, radius: f32) ->
 }
 @vertex
 fn vertex(@builtin(vertex_index) index: u32, @builtin(instance_index) instance_index: u32) -> MaterialInput {
-    let vertex = vertices[index]; let instance = instances[instance_index];
+    let vertex = load_vertices(index); let instance = load_instances(instance_index);
     var output: MaterialInput;
     output.position = clip_position(instance, vertex.a.xyz);
     output.color = vertex.color_a * instance.tint;

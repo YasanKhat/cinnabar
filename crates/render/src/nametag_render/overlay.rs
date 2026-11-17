@@ -82,9 +82,16 @@ type OverlayView = (
 pub(super) fn prepare(
     mut commands: Commands,
     device: Res<RenderDevice>,
+    adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
     views: Query<OverlayView>,
     mut failed: Local<crate::gpu_allocation::FailedRequests<(Extent3d, TextureFormat, u32)>>,
 ) {
+    let alternate_views = adapter.as_ref().map_or_else(
+        || crate::texture_compat::device_alternate_views(&device),
+        |adapter| {
+            crate::texture_compat::alternate_views(adapter.get_downlevel_capabilities().flags)
+        },
+    );
     failed.retain(|view| views.contains(view));
     for (entity, target, depth, msaa, enhanced, pack, overlay) in &views {
         if !enabled(enhanced, pack) {
@@ -107,7 +114,10 @@ pub(super) fn prepare(
             mip_level_count: 1,
             sample_count: msaa.samples(),
             dimension: TextureDimension::D2,
-            format: render_scene::SCENE_COLOR_FORMAT.remove_srgb_suffix(),
+            format: crate::texture_compat::encoded_format(
+                render_scene::SCENE_COLOR_FORMAT,
+                alternate_views,
+            ),
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
@@ -146,7 +156,11 @@ pub(super) fn prepare(
                     },
                     fragment: Some(wgpu::FragmentState {
                         module: &shader,
-                        entry_point: Some(if msaa.samples() > 1 {
+                        entry_point: Some(if !alternate_views && msaa.samples() > 1 {
+                            "nametag_linear_multisample_composite_fragment"
+                        } else if !alternate_views {
+                            "nametag_linear_composite_fragment"
+                        } else if msaa.samples() > 1 {
                             "nametag_multisample_composite_fragment"
                         } else {
                             "nametag_composite_fragment"

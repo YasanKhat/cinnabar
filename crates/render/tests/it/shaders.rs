@@ -247,9 +247,9 @@ fn every_shader_parses_and_validates() {
         let source = if name == "ui.wgsl" {
             // Exercise the exact production constructor, including its renderer-owned style
             // constant injection, without publishing a test-only runtime API.
-            let shader = ui_shader::from_wgsl(&raw, path.to_string_lossy());
+            let shader = ui_shader::from_wgsl(&raw, false, path.to_string_lossy());
             let bevy::shader::Source::Wgsl(source) = shader.source else {
-                panic!("UI shader constructor must produce WGSL");
+                panic!("UI constructor must produce WGSL");
             };
             standalone(&source)
         } else if name == "motion_blur.wgsl" {
@@ -304,6 +304,14 @@ fn every_shader_parses_and_validates() {
                 .validate(&module)
                 {
                     failures.push(format!("{name}: {error:?}"));
+                }
+                if matches!(
+                    name.as_str(),
+                    "chunk.wesl" | "model.wesl" | "liquid.wesl" | "transparent_terrain.wesl"
+                ) {
+                    assert_desktop_430(&shader_source::composed(&raw, &["SINGLE_SAMPLER"]), &name);
+                } else {
+                    assert_desktop_430(&source, &name);
                 }
                 for call in forwarded_matrix_arguments(&module) {
                     failures.push(format!("{name}: {call}"));
@@ -376,6 +384,7 @@ fn render_fragment_interfaces_fit_fifteen_slots_including_builtins() {
         &["PACKED_TERRAIN"][..],
         &["PACKED_TERRAIN", "ALPHA_TO_COVERAGE"][..],
         &["ENHANCED"][..],
+        &["PACKED_TERRAIN", "ENHANCED"][..],
         &["ENHANCED", "ALPHA_TO_COVERAGE"][..],
         &["ENHANCED_SHADOW"][..],
     ] {
@@ -473,4 +482,232 @@ fn direct_terrain_unit_shaders_validate_with_and_without_msaa_cutout() {
             );
         }
     }
+}
+
+/// Matches naga's GLES restriction using its resolved, transitive image/sampler usage,
+/// including calls imported from other WESL modules in the transparent terrain pipeline.
+fn assert_single_sampler_per_image(source: &str, label: &str) {
+    let module = naga::front::wgsl::parse_str(source).expect("specialized shader parses");
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .expect("specialized shader validates");
+    for (index, entry) in module.entry_points.iter().enumerate() {
+        let mut samplers = std::collections::HashMap::new();
+        for pair in &info.get_entry_point(index).sampling_set {
+            if let Some(previous) = samplers.insert(pair.image, pair.sampler) {
+                assert_eq!(
+                    previous, pair.sampler,
+                    "{label}: {} pairs {:?} with multiple samplers",
+                    entry.name, module.global_variables[pair.image].name
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn gles_terrain_programs_use_one_sampler_per_image() {
+    for extra in [
+        &[][..],
+        &["ALPHA_TO_COVERAGE"][..],
+        &["PACKED_TERRAIN"][..],
+        &["PACKED_TERRAIN", "ALPHA_TO_COVERAGE"][..],
+        &["ENHANCED"][..],
+        &["PACKED_TERRAIN", "ENHANCED"][..],
+        &["ENHANCED", "ALPHA_TO_COVERAGE"][..],
+        &["ENHANCED_SHADOW"][..],
+    ] {
+        let mut definitions = vec!["SINGLE_SAMPLER"];
+        definitions.extend_from_slice(extra);
+        for (name, raw) in [
+            ("chunk", include_str!("../../src/chunk.wesl")),
+            ("model", include_str!("../../src/model.wesl")),
+            ("liquid", include_str!("../../src/liquid.wesl")),
+            (
+                "transparent",
+                include_str!("../../src/transparent_terrain.wesl"),
+            ),
+        ] {
+            assert_single_sampler_per_image(&shader_source::composed(raw, &definitions), name);
+        }
+    }
+}
+
+#[test]
+fn ui_software_bilinear_preserves_the_single_sampler_contract() {
+    let raw = include_str!("../../src/ui.wgsl");
+    // Use the same constructor as load_internal_asset!, not a test-only preprocessor.
+    for software_bilinear in [false, true] {
+        let shader = ui_shader::from_wgsl(raw, software_bilinear, "ui.wgsl");
+        let bevy::shader::Source::Wgsl(source) = shader.source else {
+            panic!("UI constructor must produce WGSL");
+        };
+        assert_eq!(source.as_ref(), ui_shader::source(raw, software_bilinear));
+        let module = naga::front::wgsl::parse_str(&source).expect("production UI parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("production UI validates");
+        if software_bilinear {
+            assert_single_sampler_per_image(&source, "software UI");
+        }
+    }
+}
+
+use crate::desktop_gl::assert_desktop_430;
+
+#[test]
+fn desktop_430_specialized_programs_translate_without_known_hazards() {
+    for name in ["chunk", "model", "liquid", "transparent_terrain"] {
+        let raw =
+            std::fs::read_to_string(format!("{}/src/{name}.wesl", env!("CARGO_MANIFEST_DIR")))
+                .unwrap();
+        for extra in [
+            &[][..],
+            &["PACKED_TERRAIN"][..],
+            &["TERRAIN_UNITS"][..],
+            &["ALPHA_TO_COVERAGE"][..],
+            &["ENHANCED"][..],
+            &["PACKED_TERRAIN", "ENHANCED"][..],
+            &["ENHANCED_SHADOW"][..],
+        ] {
+            let mut flags = vec!["SINGLE_SAMPLER"];
+            flags.extend_from_slice(extra);
+            assert_desktop_430(
+                &shader_source::composed(&raw, &flags),
+                &format!("{name}/{flags:?}"),
+            );
+        }
+    }
+    for name in ["actor", "hand_rig"] {
+        let raw =
+            std::fs::read_to_string(format!("{}/src/{name}.wesl", env!("CARGO_MANIFEST_DIR")))
+                .unwrap();
+        let shader = shader_safety::from_actor_wesl(
+            &raw,
+            name,
+            render_model::ACTOR_GPU_INSTANCE_WORDS,
+            render_model::ACTOR_RIG_VERTEX_WORDS,
+        );
+        let bevy::shader::Source::Wesl(raw) = shader.source else {
+            unreachable!()
+        };
+        for flags in [
+            &[][..],
+            &["COMPACT_BONES"][..],
+            &["ACTOR_MOTION"][..],
+            &["ACTOR_MASK"][..],
+            &["MASK_DISSOLVE"][..],
+            &["MASK_DISSOLVE", "MASK_DISSOLVE_MSAA"][..],
+            &["ALPHA_TO_COVERAGE"][..],
+        ] {
+            if name == "hand_rig" && !flags.is_empty() && flags != ["COMPACT_BONES"] {
+                continue;
+            }
+            assert_desktop_430(
+                &shader_source::composed(&raw, flags),
+                &format!("{name}/{flags:?}"),
+            );
+        }
+    }
+    for name in ["entity_shadow", "depth_smaa/edge"] {
+        let raw =
+            std::fs::read_to_string(format!("{}/src/{name}.wesl", env!("CARGO_MANIFEST_DIR")))
+                .unwrap();
+        for flags in [&[][..], &["MULTISAMPLED"][..]] {
+            assert_desktop_430(
+                &shader_source::composed(&raw, flags),
+                &format!("{name}/{flags:?}"),
+            );
+        }
+    }
+    for msaa in [false, true] {
+        assert_desktop_430(
+            &motion_blur_shader::source(include_str!("../../src/motion_blur.wgsl"), msaa),
+            "motion blur",
+        );
+    }
+    let shader = ui_shader::from_wgsl(include_str!("../../src/ui.wgsl"), true, "ui.wgsl");
+    let bevy::shader::Source::Wgsl(source) = shader.source else {
+        unreachable!()
+    };
+    assert_desktop_430(&source, "UI software bilinear");
+    let shader = nametag_shader::from_wesl(include_str!("../../src/nametag.wesl"), "nametag.wesl");
+    let bevy::shader::Source::Wesl(source) = shader.source else {
+        unreachable!()
+    };
+    for flags in [&[][..], &["NAMETAG_ALPHA_TEST"][..]] {
+        assert_desktop_430(&shader_source::composed(&source, flags), "nametag");
+    }
+    let shader = shader_safety::from_block_entity_wesl(
+        include_str!("../../src/block_entity/block_entity.wesl"),
+        "block_entity.wesl",
+        render_model::BLOCK_ENTITY_VERTEX_WORDS,
+        render_model::BLOCK_SELECTION_VERTICES_PER_EDGE,
+    );
+    let bevy::shader::Source::Wesl(source) = shader.source else {
+        unreachable!()
+    };
+    assert_desktop_430(&shader_source::composed(&source, &[]), "block entity");
+    for name in [
+        "aim_assist/highlight",
+        "mod_render/primitives",
+        "enhanced/post",
+    ] {
+        let raw =
+            std::fs::read_to_string(format!("{}/src/{name}.wesl", env!("CARGO_MANIFEST_DIR")))
+                .unwrap();
+        assert_desktop_430(&shader_source::composed(&raw, &[]), name);
+    }
+    for name in [
+        "enhanced/hand_layer",
+        "shaderpack/atlas/blend",
+        "shaderpack/blit",
+        "frame_generation/optical_flow",
+        "frame_generation/interpolation",
+        "chunk/gpu_cull/hiz",
+    ] {
+        let raw =
+            std::fs::read_to_string(format!("{}/src/{name}.wgsl", env!("CARGO_MANIFEST_DIR")))
+                .unwrap();
+        assert_desktop_430(&raw, name);
+    }
+    let primitive = crate::primitive_shader::shader(
+        include_str!("../../src/primitive_shapes/shapes.wesl"),
+        "shapes.wesl",
+    );
+    let bevy::shader::Source::Wesl(primitive) = primitive.source else {
+        unreachable!()
+    };
+    assert_desktop_430(
+        &shader_source::composed(&primitive, &[]),
+        "primitive shapes",
+    );
+    for msaa in [false, true] {
+        assert_desktop_430(
+            &crate::clip_shader::source(
+                msaa,
+                include_str!("../../src/mod_render/retained/clip_mask.wgsl"),
+            ),
+            "clip mask",
+        );
+    }
+    let composition = mod_render::shader::compose_masked(
+        include_str!("../../src/mod_render/composition.wgsl"),
+        false,
+        2,
+    )
+    .unwrap();
+    assert_desktop_430(&composition, "mod composition");
+    let drawing = format!(
+        "{}\n{}",
+        mod_render::material::module(mod_render::material::BUILTIN),
+        include_str!("../../src/mod_render/retained/drawing.wgsl")
+    );
+    assert_desktop_430(&drawing, "retained drawing");
 }

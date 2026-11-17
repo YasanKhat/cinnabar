@@ -5,6 +5,31 @@ import render::lighting::{actor_lighting, actor_distance_fog, tint_to_gamma, tin
 import render::lighting::{cutout_alpha_2d};
 
 // Packed Rust BlockEntityVertex: position, atlas UV, RGBA, world normal, actor light.
+struct FragmentInput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) native_lighting: vec3<f32>,
+    @location(3) world_position: vec3<f32>,
+    @location(4) @interpolate(flat) actor_light: u32,
+    @location(5) @interpolate(flat) beam_tile: vec2<f32>,
+    // Negative where an entity-lit face points away from the camera.
+    @location(6) facing: f32,
+}
+
+struct SelectionLineInput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+}
+
+struct PortalInput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(perspective, centroid) color_uv: vec2<f32>,
+    @location(1) @interpolate(perspective, centroid) parallax_uv: vec2<f32>,
+    @location(2) phase: f32,
+    @location(3) fog: f32,
+}
+
 const BLOCK_ENTITY_ALPHA_THRESHOLD: f32 = 0.5;
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -90,6 +115,15 @@ fn selection_endpoint(index: u32) -> vec4<f32> {
     return clip;
 }
 
+fn selection_corner(index: u32) -> u32 {
+    switch index {
+        case 0u, 3u: { return 0u; }
+        case 1u: { return 1u; }
+        case 2u, 4u: { return 2u; }
+        default: { return 3u; }
+    }
+}
+
 @vertex
 fn selection_line_vertex(@builtin(vertex_index) vertex_index: u32) -> SelectionLineOutput {
     let first = vertex_index / BLOCK_SELECTION_VERTICES_PER_EDGE * 2u;
@@ -114,7 +148,7 @@ fn selection_line_vertex(@builtin(vertex_index) vertex_index: u32) -> SelectionL
         return out;
     }
     let perpendicular = vec2(-direction.y, direction.x) * inverseSqrt(length_squared);
-    let corner = array(0u, 1u, 2u, 0u, 2u, 3u)[vertex_index % BLOCK_SELECTION_VERTICES_PER_EDGE];
+    let corner = selection_corner(vertex_index % BLOCK_SELECTION_VERTICES_PER_EDGE);
     var endpoint = select(a, b, corner == 1u || corner == 2u);
     let sign = select(-1.0, 1.0, corner >= 2u);
     endpoint = vec4(endpoint.xy + perpendicular * sign * SELECTION_STROKE_PIXELS / view.viewport.zw * endpoint.w, endpoint.zw);
@@ -125,12 +159,12 @@ fn selection_line_vertex(@builtin(vertex_index) vertex_index: u32) -> SelectionL
 }
 
 @fragment
-fn selection_line_fragment(input: SelectionLineOutput) -> @location(0) vec4<f32> {
+fn selection_line_fragment(input: SelectionLineInput) -> @location(0) vec4<f32> {
     return input.color;
 }
 
 @fragment
-fn block_entity_solid(input: VertexOutput) -> @location(0) vec4<f32> {
+fn block_entity_solid(input: FragmentInput) -> @location(0) vec4<f32> {
     var texel = textureSample(atlas, atlas_sampler, input.uv);
     @if(ALPHA_TO_COVERAGE)
     let cutout = cutout_alpha_2d(atlas, input.uv, dpdx(input.uv), dpdy(input.uv), texel, BLOCK_ENTITY_ALPHA_THRESHOLD);
@@ -158,7 +192,7 @@ fn block_entity_solid(input: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 @fragment
-fn block_entity_overlay(input: VertexOutput) -> @location(0) vec4<f32> {
+fn block_entity_overlay(input: FragmentInput) -> @location(0) vec4<f32> {
     let uv = vec2(input.uv.x, select(input.uv.y,
         input.beam_tile.x + fract(input.uv.y) * input.beam_tile.y, input.beam_tile.y > 0.0));
     // Keep implicit derivatives out of the early-return branch.
@@ -174,13 +208,13 @@ fn block_entity_overlay(input: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 @fragment
-fn block_entity_additive(input: VertexOutput) -> @location(0) vec4<f32> {
+fn block_entity_additive(input: FragmentInput) -> @location(0) vec4<f32> {
     let gamma = input.color.rgb * input.native_lighting;
     return tint_to_linear(vec4(actor_distance_fog(gamma, input.world_position, view.world_position), input.color.a));
 }
 
 @fragment
-fn block_entity_crack(input: VertexOutput) -> @location(0) vec4<f32> {
+fn block_entity_crack(input: FragmentInput) -> @location(0) vec4<f32> {
     let uv_dx = dpdx(input.uv);
     let uv_dy = dpdy(input.uv);
     if (input.uv.x < 0.0) { return input.color; }
@@ -230,7 +264,7 @@ fn portal_vertex(@builtin(vertex_index) vertex_index: u32) -> PortalOutput {
 }
 
 @fragment
-fn portal_fragment(input: PortalOutput) -> @location(0) vec4<f32> {
+fn portal_fragment(input: PortalInput) -> @location(0) vec4<f32> {
     // One/OneMinusSrcAlpha clears the surface with the base, then adds the stars.
     let uv = portal.star_rect.xy + fract(input.parallax_uv) * portal.star_rect.zw;
     let uv_dx = dpdx(uv);

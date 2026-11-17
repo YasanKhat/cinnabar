@@ -112,9 +112,13 @@ fn stem_colours_source() -> String {
         })
         .collect::<Vec<_>>();
     format!(
-        "const STEM_COLOURS: array<vec3<f32>, {count}> = array({colours});\nfn stem_colour(flags: u32) -> vec3<f32> {{\n if ((flags & {flag}u) == 0u) {{ return vec3(1.0); }}\n let signal = (flags & {signal_mask}u) >> {signal_shift}u;\n if (signal != 0u) {{ return STEM_COLOURS[7u + signal]; }}\n return STEM_COLOURS[(flags & {growth_mask}u) >> {growth_shift}u];\n}}",
-        count = colours.len(),
-        colours = colours.join(", "),
+        "fn stem_colour(flags: u32) -> vec3<f32> {{\n if ((flags & {flag}u) == 0u) {{ return vec3(1.0); }}\n let signal = (flags & {signal_mask}u) >> {signal_shift}u;\n let index = select((flags & {growth_mask}u) >> {growth_shift}u, 7u + signal, signal != 0u);\n switch index {{\n {cases}\n default: {{ return vec3(0.0); }}\n }}\n}}",
+        cases = colours
+            .iter()
+            .enumerate()
+            .map(|(index, colour)| format!("case {index}u: {{ return {colour}; }}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
         flag = assets::stem::MATERIAL_FLAG,
         signal_mask = assets::redstone_wire::SIGNAL_MASK,
         signal_shift = assets::redstone_wire::SIGNAL_SHIFT,

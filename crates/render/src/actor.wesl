@@ -5,6 +5,30 @@ import render::lighting::{actor_lighting, actor_distance_fog, actor_light_colour
 @if(ALPHA_TO_COVERAGE)
 import render::lighting::{CutoutSample, cutout_alpha_array_region};
 
+struct FragmentInput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(perspective, centroid) uv: vec4<f32>,
+    @location(1) @interpolate(flat) skin_info: vec4<u32>,
+    @location(2) @interpolate(perspective, centroid) back_uv: vec2<f32>,
+    // xy: layers; z: light; w: original packed RGBA8 overlay.
+    @location(3) @interpolate(flat) multitexture_layers: vec4<u32>,
+    @location(4) world_position: vec3<f32>,
+    @location(5) native_lighting: vec3<f32>,
+    @location(6) back_native_lighting: vec3<f32>,
+    // dissolve bits, surface kind, material flags, tint RGBA8.
+    @location(7) @interpolate(flat) material_parameters: vec4<u32>,
+    @if(ALPHA_TO_COVERAGE)
+    @location(8) @interpolate(flat) chart_bounds: vec4<u32>,
+    @if(ACTOR_MOTION && !ALPHA_TO_COVERAGE)
+    @location(8) current_clip: vec4<f32>,
+    @if(ACTOR_MOTION && !ALPHA_TO_COVERAGE)
+    @location(9) previous_clip: vec4<f32>,
+    @if(ACTOR_MOTION && ALPHA_TO_COVERAGE)
+    @location(9) current_clip: vec4<f32>,
+    @if(ACTOR_MOTION && ALPHA_TO_COVERAGE)
+    @location(10) previous_clip: vec4<f32>,
+}
+
 struct GeometrySpan {
     first_vertex: u32,
     vertex_count: u32,
@@ -15,10 +39,34 @@ struct GeometrySpan {
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<storage, read> instance_words: array<u32>;
 @group(0) @binding(2) var<storage, read> vertex_words: array<u32>;
-@group(0) @binding(3) var<storage, read> geometry_spans: array<GeometrySpan>;
-@group(0) @binding(4) var<storage, read> previous_bones: array<BoneMatrix>;
+@group(0) @binding(3) var<storage, read> geometry_spans: array<vec2<u32>>;
+
+// Raw storage preserves the 8-byte CPU record without a std430 struct block.
+fn load_geometry_spans(index: u32) -> GeometrySpan {
+    let base = index * 1u;
+    return GeometrySpan(geometry_spans[base + 0u].x,
+        geometry_spans[base + 0u].y);
+}
+@group(0) @binding(4) var<storage, read> previous_bones: array<vec4<f32>>;
+
+// Raw storage preserves the 48-byte CPU record without a std430 struct block.
+fn load_previous_bones(index: u32) -> BoneMatrix {
+    let base = index * 3u;
+    return BoneMatrix(vec4<f32>(previous_bones[base + 0u].x, previous_bones[base + 0u].y, previous_bones[base + 0u].z, previous_bones[base + 0u].w),
+        vec4<f32>(previous_bones[base + 1u].x, previous_bones[base + 1u].y, previous_bones[base + 1u].z, previous_bones[base + 1u].w),
+        vec4<f32>(previous_bones[base + 2u].x, previous_bones[base + 2u].y, previous_bones[base + 2u].z, previous_bones[base + 2u].w));
+}
 @if(!COMPACT_BONES)
-@group(0) @binding(5) var<storage, read> current_bones: array<BoneMatrix>;
+@group(0) @binding(5) var<storage, read> current_bones: array<vec4<f32>>;
+
+// Raw storage preserves the 48-byte CPU record without a std430 struct block.
+@if(!COMPACT_BONES)
+fn load_current_bones(index: u32) -> BoneMatrix {
+    let base = index * 3u;
+    return BoneMatrix(vec4<f32>(current_bones[base + 0u].x, current_bones[base + 0u].y, current_bones[base + 0u].z, current_bones[base + 0u].w),
+        vec4<f32>(current_bones[base + 1u].x, current_bones[base + 1u].y, current_bones[base + 1u].z, current_bones[base + 1u].w),
+        vec4<f32>(current_bones[base + 2u].x, current_bones[base + 2u].y, current_bones[base + 2u].z, current_bones[base + 2u].w));
+}
 @group(0) @binding(6) var skins: texture_2d_array<f32>;
 @group(0) @binding(7) var skin_sampler: sampler;
 @group(0) @binding(8) var<uniform> material_class: vec4<u32>;
@@ -37,35 +85,50 @@ struct MotionInstance {
     pose: vec4<u32>,
 }
 @if(ACTOR_MOTION)
-@group(2) @binding(0) var<storage, read> actor_motion: array<MotionInstance>;
+@group(2) @binding(0) var<storage, read> actor_motion: array<vec4<f32>>;
+
+// Raw storage preserves the 144-byte CPU record without a std430 struct block.
 @if(ACTOR_MOTION)
-@group(2) @binding(1) var<storage, read> rendered_previous_bones: array<BoneMatrix>;
+fn load_actor_motion(index: u32) -> MotionInstance {
+    let base = index * 9u;
+    return MotionInstance(mat4x4<f32>(vec4<f32>(actor_motion[base + 0u].x, actor_motion[base + 0u].y, actor_motion[base + 0u].z, actor_motion[base + 0u].w), vec4<f32>(actor_motion[base + 1u].x, actor_motion[base + 1u].y, actor_motion[base + 1u].z, actor_motion[base + 1u].w), vec4<f32>(actor_motion[base + 2u].x, actor_motion[base + 2u].y, actor_motion[base + 2u].z, actor_motion[base + 2u].w), vec4<f32>(actor_motion[base + 3u].x, actor_motion[base + 3u].y, actor_motion[base + 3u].z, actor_motion[base + 3u].w)),
+        mat4x4<f32>(vec4<f32>(actor_motion[base + 4u].x, actor_motion[base + 4u].y, actor_motion[base + 4u].z, actor_motion[base + 4u].w), vec4<f32>(actor_motion[base + 5u].x, actor_motion[base + 5u].y, actor_motion[base + 5u].z, actor_motion[base + 5u].w), vec4<f32>(actor_motion[base + 6u].x, actor_motion[base + 6u].y, actor_motion[base + 6u].z, actor_motion[base + 6u].w), vec4<f32>(actor_motion[base + 7u].x, actor_motion[base + 7u].y, actor_motion[base + 7u].z, actor_motion[base + 7u].w)),
+        vec4<u32>(bitcast<u32>(actor_motion[base + 8u].x), bitcast<u32>(actor_motion[base + 8u].y), bitcast<u32>(actor_motion[base + 8u].z), bitcast<u32>(actor_motion[base + 8u].w)));
+}
+@if(ACTOR_MOTION)
+@group(2) @binding(1) var<storage, read> rendered_previous_bones: array<vec4<f32>>;
+
+// Raw storage preserves the 48-byte CPU record without a std430 struct block.
+@if(ACTOR_MOTION)
+fn load_rendered_previous_bones(index: u32) -> BoneMatrix {
+    let base = index * 3u;
+    return BoneMatrix(vec4<f32>(rendered_previous_bones[base + 0u].x, rendered_previous_bones[base + 0u].y, rendered_previous_bones[base + 0u].z, rendered_previous_bones[base + 0u].w),
+        vec4<f32>(rendered_previous_bones[base + 1u].x, rendered_previous_bones[base + 1u].y, rendered_previous_bones[base + 1u].z, rendered_previous_bones[base + 1u].w),
+        vec4<f32>(rendered_previous_bones[base + 2u].x, rendered_previous_bones[base + 2u].y, rendered_previous_bones[base + 2u].z, rendered_previous_bones[base + 2u].w));
+}
 
 struct VertexOutput {
     @builtin(position) @invariant position: vec4<f32>,
-    // xy samples the artwork; zw carries the item sprite or face origin.
     @location(0) @interpolate(perspective, centroid) uv: vec4<f32>,
-    // Texture layer, geometry validity, optional glint instance index and UV wrapping.
     @location(1) @interpolate(flat) skin_info: vec4<u32>,
-    @if(!ACTOR_MOTION)
-    @location(2) world_normal: vec3<f32>,
-    @if(ACTOR_MOTION)
-    @location(2) current_clip: vec4<f32>,
-    @location(3) @interpolate(perspective, centroid) back_uv: vec2<f32>,
-    @location(4) @interpolate(flat) tint: u32,
-    @location(5) @interpolate(flat) overlay: vec4<f32>,
-    @location(7) @interpolate(flat) light: u32,
-    @location(8) world_position: vec3<f32>,
-    @location(9) @interpolate(flat) multitexture_layers: vec2<u32>,
-    @location(10) native_lighting: vec3<f32>,
-    // Dissolve float bits, surface kind and material word share one flat varying, keeping
-    // the interface within fifteen slots including front-facing.
-    @location(12) @interpolate(flat) material_parameters: vec3<u32>,
-    @location(11) back_native_lighting: vec3<f32>,
+    @location(2) @interpolate(perspective, centroid) back_uv: vec2<f32>,
+    // xy: layers; z: light; w: original packed RGBA8 overlay.
+    @location(3) @interpolate(flat) multitexture_layers: vec4<u32>,
+    @location(4) world_position: vec3<f32>,
+    @location(5) native_lighting: vec3<f32>,
+    @location(6) back_native_lighting: vec3<f32>,
+    // dissolve bits, surface kind, material flags, tint RGBA8.
+    @location(7) @interpolate(flat) material_parameters: vec4<u32>,
     @if(ALPHA_TO_COVERAGE)
-    @location(13) @interpolate(flat) chart_bounds: vec4<u32>,
-    @if(ACTOR_MOTION)
-    @location(6) previous_clip: vec4<f32>,
+    @location(8) @interpolate(flat) chart_bounds: vec4<u32>,
+    @if(ACTOR_MOTION && !ALPHA_TO_COVERAGE)
+    @location(8) current_clip: vec4<f32>,
+    @if(ACTOR_MOTION && !ALPHA_TO_COVERAGE)
+    @location(9) previous_clip: vec4<f32>,
+    @if(ACTOR_MOTION && ALPHA_TO_COVERAGE)
+    @location(9) current_clip: vec4<f32>,
+    @if(ACTOR_MOTION && ALPHA_TO_COVERAGE)
+    @location(10) previous_clip: vec4<f32>,
 }
 
 // Geometry texture dimensions use u16 coordinates; both charts fit one flat varying.
@@ -161,19 +224,19 @@ fn actor_vertex(
     let texture_layer = instance_words[instance_base + 15u];
     let partial_tick = clamp(word_f32(instance_base + 16u), 0.0, 1.0);
     let overlay_rgba8 = instance_words[instance_base + 19u];
-    let span = geometry_spans[geometry_id];
+    let span = load_geometry_spans(geometry_id);
 
     var out: VertexOutput;
     out.skin_info.x = texture_layer;
-    out.tint = instance_words[instance_base + 18u];
-    out.overlay = unpack4x8unorm(overlay_rgba8);
-    out.light = instance_words[instance_base + 24u];
+    out.material_parameters.w = instance_words[instance_base + 18u];
+    out.multitexture_layers.w = overlay_rgba8;
+    out.multitexture_layers.z = instance_words[instance_base + 24u];
     out.native_lighting = vec3(1.0);
     out.back_native_lighting = vec3(1.0);
     out.material_parameters.y = 0u;
-    out.multitexture_layers = vec2(instance_words[instance_base + 25u], instance_words[instance_base + 26u]);
+    out.multitexture_layers = vec4(vec2(instance_words[instance_base + 25u], instance_words[instance_base + 26u]), out.multitexture_layers.zw);
     out.material_parameters.z = instance_words[instance_base + 27u];
-    if ((out.material_parameters.z & ACTOR_MATERIAL_DISABLE_OVERLAY_FLAG) != 0u) { out.overlay = vec4(0.0); }
+    if ((out.material_parameters.z & ACTOR_MATERIAL_DISABLE_OVERLAY_FLAG) != 0u) { out.multitexture_layers.w = 0u; }
     let has_glint = (out.material_parameters.z & ACTOR_MATERIAL_KIND_MASK) == ACTOR_MATERIAL_GLINT || (out.material_parameters.z & ACTOR_GLINT_DEFINE_FLAG) != 0u || word_f32(instance_base + 35u) != 0.0;
     // Cinnabar material masks name layers of the draw's page; MAX names none.
     let has_masks = instance_words[instance_base + 37u] != 0xffffffffu || instance_words[instance_base + 38u] != 0xffffffffu;
@@ -193,8 +256,6 @@ fn actor_vertex(
         out.uv = vec4(0.0);
         out.back_uv = vec2(0.0);
         out.skin_info.y = 0u;
-        @if(!ACTOR_MOTION)
-        out.world_normal = vec3(0.0, 1.0, 0.0);
         return out;
     }
 
@@ -230,11 +291,11 @@ fn actor_vertex(
     out.back_uv = select(uv_offset + raw_back_uv * uv_scale, raw_back_uv, raw_back_uv.x < -1.0e8);
     let bone_index = vertex_words[vertex_base + 10u];
     out.material_parameters.y = vertex_words[vertex_base + 11u];
-    let previous_bone = previous_bones[previous_bone_base + bone_index];
+    let previous_bone = load_previous_bones(previous_bone_base + bone_index);
     @if(!COMPACT_BONES)
-    let current_bone = current_bones[current_bone_base + bone_index];
+    let current_bone = load_current_bones(current_bone_base + bone_index);
     @if(COMPACT_BONES)
-    let current_bone = previous_bones[ACTOR_COMPACT_CURRENT_BONE_BASE + current_bone_base + bone_index];
+    let current_bone = load_previous_bones(ACTOR_COMPACT_CURRENT_BONE_BASE + current_bone_base + bone_index);
     let posed = posed_point(previous_bone, current_bone, local, partial_tick);
     let bone_normal = posed_normal(previous_bone, current_bone, local_normal, partial_tick);
     let placement = BoneMatrix(
@@ -248,22 +309,20 @@ fn actor_vertex(
     out.position = view.clip_from_world * world;
     @if(ACTOR_MOTION)
     {
-        let motion = actor_motion[instance_index];
+        let motion = load_actor_motion(instance_index);
         out.current_clip = motion.current_clip_from_actor * vec4(posed, 1.0);
         out.previous_clip = out.current_clip;
         if (motion.pose.y != 0u) {
-            let previous_rendered = transform_point(rendered_previous_bones[motion.pose.x + bone_index], local);
+            let previous_rendered = transform_point(load_rendered_previous_bones(motion.pose.x + bone_index), local);
             out.previous_clip = motion.previous_clip_from_actor * vec4(previous_rendered, 1.0);
         }
     }
     out.world_position = world.xyz;
     let world_normal = placed_normal(placement, bone_normal);
-    @if(!ACTOR_MOTION)
-    out.world_normal = world_normal;
-    out.native_lighting = actor_lighting(out.light, world_normal, out.overlay.a) * light_color_multiplier;
+    out.native_lighting = actor_lighting(out.multitexture_layers.z, world_normal, unpack4x8unorm(out.multitexture_layers.w).a) * light_color_multiplier;
     out.back_native_lighting = out.native_lighting;
     if (out.material_parameters.y != 0u) {
-        out.back_native_lighting = actor_lighting(out.light, -world_normal, out.overlay.a) * light_color_multiplier;
+        out.back_native_lighting = actor_lighting(out.multitexture_layers.z, -world_normal, unpack4x8unorm(out.multitexture_layers.w).a) * light_color_multiplier;
     }
     out.skin_info.y = 1u;
     return out;
@@ -300,7 +359,7 @@ region: vec4<i32>) -> CutoutSample {
     }
 }
 
-fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
+fn actor_colour(input: FragmentInput, front: bool) -> vec4<f32> {
     var uv = select(input.back_uv, input.uv.xy, front);
     // Gradients precede per-pixel rejection and remain valid inside material branches.
     let uv_dx = dpdx(uv);
@@ -354,7 +413,7 @@ fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
     @if(!ALPHA_TO_COVERAGE)
     if (material == ACTOR_MATERIAL_GLINT && !legacy_mask && color.a < ACTOR_ALPHA_TEST_THRESHOLD) { discard; }
     if (legacy_mask && color.a == 0.0) { discard; }
-    let multitexture_material = material_class.z != 0u && all(input.multitexture_layers != vec2(0xffffffffu)) && !masked_multitexture;
+    let multitexture_material = material_class.z != 0u && all(input.multitexture_layers.xy != vec2(0xffffffffu)) && !masked_multitexture;
     if (authored && (input.material_parameters.z & ACTOR_MATERIAL_ALPHA_TEST_FLAG) != 0u) {
         if (emissive && (input.material_parameters.z & ACTOR_MATERIAL_ONLY_EMISSIVE_FLAG) != 0u && (color.a == 0.0 || color.a == 1.0)) { discard; }
         if (emissive && all(color == vec4(0.0))) { discard; }
@@ -367,8 +426,8 @@ fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
     // Materials that compose a second texture never dye the base; MASKED_MULTITEXTURE has
     // already composed its clothes over it above.
     let second_texture_material = multitexture_material || masked_multitexture;
-    if (input.tint != 0u) {
-        let change_color = unpack4x8unorm(input.tint);
+    if (input.material_parameters.w != 0u) {
+        let change_color = unpack4x8unorm(input.material_parameters.w);
         let dye = change_color.rgb;
         if (color_mask_material) {
             // Native entity_change_color: alpha weights dye, never coverage/opacity. The
@@ -382,7 +441,7 @@ fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
     }
     if (multitexture_material) {
         let tex1 = tint_to_gamma(textureSampleGrad(skins, skin_sampler, uv, i32(input.multitexture_layers.x), uv_dx, uv_dy));
-        let multiplier = select(vec3(1.0), unpack4x8unorm(input.tint).rgb, input.tint != 0u);
+        let multiplier = select(vec3(1.0), unpack4x8unorm(input.material_parameters.w).rgb, input.material_parameters.w != 0u);
         // MASKED_MULTITEXTURE composes before the alpha test above, so it never reaches here.
         if ((input.material_parameters.z & ACTOR_TEXTURE_TINT_FLAG) != 0u) {
             // MULTIPLICATIVE_TINT: the tinted second texture lies over the base by its alpha.
@@ -403,7 +462,7 @@ fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
     }
     // Actor/Entity overlays blend BEFORE the shaded lightmap product. Vertex
     // shading preserves its interpolation and the explicit zero/unlit override.
-    let overlay = select(input.overlay, vec4(0.0), material == ACTOR_MATERIAL_DISSOLVE_COLOR);
+    let overlay = select(unpack4x8unorm(input.multitexture_layers.w), vec4(0.0), material == ACTOR_MATERIAL_DISSOLVE_COLOR);
     let native_lighting = select(input.native_lighting, input.back_native_lighting, !front && input.material_parameters.y != 0u);
     // Cinnabar masks: glow adds after lighting; emissive draws masked texels unlit.
     var glow = vec3(0.0);
@@ -422,9 +481,9 @@ fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
         }
     }
     var point_lit_native_lighting = native_lighting;
-    if ((input.light & ACTOR_LIGHT_WORLD_FLAG) != 0u) {
-        let vanilla_light = actor_light_colour(input.light);
-        let dynamic_light = point_lit_actor_light_colour(input.light, input.world_position);
+    if ((input.multitexture_layers.z & ACTOR_LIGHT_WORLD_FLAG) != 0u) {
+        let vanilla_light = actor_light_colour(input.multitexture_layers.z);
+        let dynamic_light = point_lit_actor_light_colour(input.multitexture_layers.z, input.world_position);
         point_lit_native_lighting *= dynamic_light / max(vanilla_light, vec3(0.0001));
     }
     let lighting = mix(select(point_lit_native_lighting, mix(vec3(1.0), point_lit_native_lighting, color.a), emissive), vec3(1.0), unlit);
@@ -447,7 +506,7 @@ fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
         } else {
             foil_tex = glint_layers(uv, input.uv.zw, offsets, glint_scale, item_extent, legacy);
         }
-        let foil_light = select(vec3(1.0), point_lit_actor_light_colour(input.light, input.world_position), (input.light & ACTOR_LIGHT_WORLD_FLAG) != 0u);
+        let foil_light = select(vec3(1.0), point_lit_actor_light_colour(input.multitexture_layers.z, input.world_position), (input.multitexture_layers.z & ACTOR_LIGHT_WORLD_FLAG) != 0u);
         let foil = foil_tex * GLINT_TINT_RGB * strength * foil_light;
         if (worn_legacy) {
             legacy_foil = foil * foil;
@@ -467,25 +526,25 @@ fn actor_colour(input: VertexOutput, front: bool) -> vec4<f32> {
 }
 
 @fragment
-fn actor_fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn actor_fragment(input: FragmentInput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     return actor_colour(input, front);
 }
 
 @if(MASK_DISSOLVE && !MASK_DISSOLVE_MSAA)
-@group(3) @binding(0) var mask_dissolve_depth: texture_depth_2d;
+@group(3) @binding(0) var mask_dissolve_depth: texture_2d<f32>;
 @if(MASK_DISSOLVE_MSAA)
-@group(3) @binding(0) var mask_dissolve_depth: texture_depth_multisampled_2d;
+@group(3) @binding(0) var mask_dissolve_depth: texture_multisampled_2d<f32>;
 
 @fragment
-fn actor_mask_fragment(input: VertexOutput, @builtin(front_facing) front: bool,
+fn actor_mask_fragment(input: FragmentInput, @builtin(front_facing) front: bool,
     @if(MASK_DISSOLVE_MSAA) @builtin(sample_index) sample_index: u32,
 ) -> @location(0) vec4<f32> {
     // The scene's function owns every material rejection and multisample cutout footprint.
     let colour = actor_colour(input, front);
     @if(MASK_DISSOLVE && !MASK_DISSOLVE_MSAA)
-    let companion_depth = textureLoad(mask_dissolve_depth, vec2<i32>(input.position.xy), 0);
+    let companion_depth = textureLoad(mask_dissolve_depth, vec2<i32>(input.position.xy), 0).r;
     @if(MASK_DISSOLVE_MSAA)
-    let companion_depth = textureLoad(mask_dissolve_depth, vec2<i32>(input.position.xy), i32(sample_index));
+    let companion_depth = textureLoad(mask_dissolve_depth, vec2<i32>(input.position.xy), i32(sample_index)).r;
     @if(MASK_DISSOLVE)
     if (companion_depth == 0.0 || input.position.z != companion_depth) { discard; }
     @if(MASK_BLEND)
@@ -496,7 +555,7 @@ fn actor_mask_fragment(input: VertexOutput, @builtin(front_facing) front: bool,
 
 @if(ACTOR_MOTION)
 // Both frames retain local detail by projecting their actor roots relative to their cameras.
-fn actor_motion_velocity(input: VertexOutput) -> vec2<f32> {
+fn actor_motion_velocity(input: FragmentInput) -> vec2<f32> {
     var velocity = vec2(0.0);
     if (input.previous_clip.w > 0.00001 && input.current_clip.w > 0.00001) {
         velocity = (input.current_clip.xy / input.current_clip.w - input.previous_clip.xy / input.previous_clip.w) * vec2(0.5, -0.5);
@@ -506,7 +565,7 @@ fn actor_motion_velocity(input: VertexOutput) -> vec2<f32> {
 
 @if(ACTOR_MOTION)
 @fragment
-fn actor_motion_fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn actor_motion_fragment(input: FragmentInput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     // The same artwork and discard rules retain cutouts and multisample alpha coverage.
     let colour = actor_colour(input, front);
     return vec4(actor_motion_velocity(input), 1.0, colour.a);

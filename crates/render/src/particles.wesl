@@ -11,7 +11,18 @@ struct Particle {
 }
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(0) @binding(1) var<storage, read> particles: array<Particle>;
+@group(0) @binding(1) var<storage, read> particles: array<vec4<f32>>;
+
+// Raw storage preserves the 96-byte CPU record without a std430 struct block.
+fn load_particles(index: u32) -> Particle {
+    let base = index * 6u;
+    return Particle(vec4<f32>(particles[base + 0u].x, particles[base + 0u].y, particles[base + 0u].z, particles[base + 0u].w),
+        vec4<f32>(particles[base + 1u].x, particles[base + 1u].y, particles[base + 1u].z, particles[base + 1u].w),
+        vec4<f32>(particles[base + 2u].x, particles[base + 2u].y, particles[base + 2u].z, particles[base + 2u].w),
+        vec4<f32>(particles[base + 3u].x, particles[base + 3u].y, particles[base + 3u].z, particles[base + 3u].w),
+        vec4<f32>(particles[base + 4u].x, particles[base + 4u].y, particles[base + 4u].z, particles[base + 4u].w),
+        vec4<f32>(particles[base + 5u].x, particles[base + 5u].y, particles[base + 5u].z, particles[base + 5u].w));
+}
 @group(0) @binding(2) var atlas: texture_2d<f32>;
 @group(0) @binding(3) var atlas_sampler: sampler;
 
@@ -32,7 +43,7 @@ fn particle_vertex(
         vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(1.0, 1.0),
         vec2(-1.0, -1.0), vec2(1.0, 1.0), vec2(-1.0, 1.0),
     );
-    let particle = particles[instance_index];
+    let particle = load_particles(instance_index);
     let corner = corners[vertex_index];
     let world_position = particle.center_light.xyz
         + particle.axis_x.xyz * corner.x

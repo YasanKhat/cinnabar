@@ -6,6 +6,10 @@
 #[path = "../../src/chunk/constants.rs"]
 #[allow(dead_code, reason = "reuse the production quad index order")]
 mod chunk_constants;
+#[path = "../../src/mod_render/retained/clip_shader.rs"]
+mod clip_shader;
+#[path = "support/desktop_gl.rs"]
+mod desktop_gl;
 #[path = "support/gpu_snapshot.rs"]
 mod gpu_snapshot;
 #[path = "../../src/hand_rig_render/bindings.rs"]
@@ -19,6 +23,8 @@ mod material_shader;
 mod motion_blur_shader;
 #[path = "../../src/nametag_render/shader.rs"]
 mod nametag_shader;
+#[path = "../../src/primitive_shapes/shader.rs"]
+mod primitive_shader;
 #[path = "../../src/queue_writes.rs"]
 #[allow(
     dead_code,

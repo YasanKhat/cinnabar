@@ -190,3 +190,62 @@ fn frame_revision_moves_only_when_the_casters_change() {
     assert!(frame.publish(&casters[..1]));
     assert_eq!(frame.revision, 2);
 }
+
+/// Recomputes the original planes to pin cached CPU and GPU geometry to identical arithmetic.
+#[test]
+fn cached_planes_match_reference_containment_and_colour_changes() {
+    let reference = |[x, y, z]: [f32; 3]| {
+        if !(SHADOW_VOLUME_BOTTOM_Y..=SHADOW_VOLUME_TOP_Y).contains(&y) {
+            return false;
+        }
+        let params = EntityShadowParams::geometry([1.0; 4]);
+        let apothem = params.volume[2] + params.volume[3] * y;
+        side_normals()
+            .iter()
+            .all(|[nx, nz]| x * nx + z * nz <= apothem)
+    };
+    for y in [-3.1, -3.0, -1.5, 0.0, 0.01, 0.02, f32::NAN] {
+        for x in -20..=20 {
+            for z in -20..=20 {
+                let point = [x as f32 / 20.0, y, z as f32 / 20.0];
+                assert_eq!(unit_volume_contains(point), reference(point));
+            }
+        }
+    }
+    for colour in [[0.0; 4], [1.0; 4], [0.7, 0.68, 0.73, 1.0]] {
+        let params = EntityShadowParams::new(colour);
+        let expected = EntityShadowParams::geometry(colour);
+        assert_eq!(params, expected);
+    }
+}
+
+#[test]
+fn shadow_mesh_generation_allocates_nothing() {
+    let (mesh, allocations) = test_alloc::count(shadow_volume_mesh);
+    assert_eq!(allocations, 0);
+    assert_eq!(mesh.len(), SHADOW_VOLUME_VERTICES);
+}
+
+/// Pins triangle order as well as winding; GPU consumers receive the same vertex stream.
+#[test]
+fn stack_mesh_matches_reference_vertex_stream() {
+    let mut expected = Vec::new();
+    for side in 0..SHADOW_VOLUME_SIDES {
+        let low = ring_point(side, false);
+        let next_low = ring_point(side + 1, false);
+        let high = ring_point(side, true);
+        let next_high = ring_point(side + 1, true);
+        expected.extend([low, next_low, next_high, low, next_high, high]);
+    }
+    for index in 1..SHADOW_VOLUME_SIDES - 1 {
+        expected.extend([
+            ring_point(0, true),
+            ring_point(index, true),
+            ring_point(index + 1, true),
+            ring_point(0, false),
+            ring_point(index + 1, false),
+            ring_point(index, false),
+        ]);
+    }
+    assert_eq!(shadow_volume_mesh().as_slice(), expected.as_slice());
+}

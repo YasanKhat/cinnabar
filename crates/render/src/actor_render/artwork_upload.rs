@@ -39,13 +39,21 @@ pub(super) fn start_page(
             device,
             &TextureDescriptor {
                 label: Some("immutable actor page"),
-                size,
+                size: Extent3d {
+                    depth_or_array_layers: crate::texture_compat::d2_array_layers(
+                        device,
+                        size.width,
+                        size.height,
+                        size.depth_or_array_layers,
+                    ),
+                    ..size
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
                 format: TextureFormat::Rgba8UnormSrgb,
                 usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                view_formats: raw_views.view_formats(),
+                view_formats: raw_views.view_formats(device),
             },
         );
         if let Some(texture) = texture {
@@ -135,6 +143,7 @@ pub(super) fn continue_page(
     let Some(view) = gpu_allocation::checked(device, "actor page view", 0, || {
         pending.texture.create_view(&TextureViewDescriptor {
             dimension: Some(TextureViewDimension::D2Array),
+            array_layer_count: Some(layers),
             ..default()
         })
     }) else {

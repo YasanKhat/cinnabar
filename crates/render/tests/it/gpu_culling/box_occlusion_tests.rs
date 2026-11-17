@@ -203,14 +203,14 @@ pub(super) fn sampled_depth(gpu: &Gpu, target: &Target) -> Vec<[u32; 4]> {
     let samples = target.samples;
     let size = target.depth.size();
     let texture = if samples == 1 {
-        "texture_depth_2d"
+        "texture_2d<f32>"
     } else {
-        "texture_depth_multisampled_2d"
+        "texture_multisampled_2d<f32>"
     };
     let load = if samples == 1 {
-        "textureLoad(depth, pixel, 0)"
+        "textureLoad(depth, pixel, 0).r"
     } else {
-        "textureLoad(depth, pixel, i32(sample))"
+        "textureLoad(depth, pixel, i32(sample)).r"
     };
     let source = format!(
         r#"

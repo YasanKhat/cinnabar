@@ -297,19 +297,19 @@ pub(in crate::chunk) fn prepare_transparent_sorts(
 
     // A view whose terrain a shader pack draws never queues the Vanilla water draw, so its
     // order is not kept either.
-    let mut visible_views = views
+    const { assert!(MAX_TRANSPARENT_VIEWS == 1) };
+    let mut visible_view_count = 0;
+    let visible_view = views
         .iter()
         .filter(|(entity, ..)| !pack.replaces(*entity, |drawn| drawn.terrain))
-        .collect::<Vec<_>>();
-    visible_views.sort_by_key(|(entity, ..)| *entity);
-    if visible_views.len() > MAX_TRANSPARENT_VIEWS {
+        .inspect(|_| visible_view_count += 1)
+        .min_by_key(|(entity, ..)| *entity);
+    if visible_view_count > MAX_TRANSPARENT_VIEWS {
         bevy::log::warn!(
             "transparent chunk renderer supports one retained 3D view; extra views are rejected"
         );
-        visible_views.truncate(MAX_TRANSPARENT_VIEWS);
     }
-    let Some((view_entity, view, visible_entities, enhanced)) = visible_views.into_iter().next()
-    else {
+    let Some((view_entity, view, visible_entities, enhanced)) = visible_view else {
         if runtime.view_entity.is_some() {
             runtime.reset_for_view(None);
             clear_active_transparent_metrics(&metrics);

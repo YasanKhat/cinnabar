@@ -363,7 +363,8 @@ fn prepare_actor_resources(
         receipts.clear();
         receipts.finish_frame();
     }
-    let raw_views = crate::actor::gpu::ArtworkRawViews::current(raw_views);
+    let raw_views =
+        crate::actor::gpu::ArtworkRawViews::current(raw_views).for_device(&uploads.device);
     gpu.artwork.set_raw_views(raw_views);
     gpu.skins.set_raw_views(raw_views);
     if gpu.skins.failed(&frame.skins) {

@@ -50,16 +50,15 @@ fn adapters_must_support_every_renderer_capability_and_storage_limit() {
 }
 
 #[test]
-fn adapters_without_alternate_texture_views_are_not_candidates() {
-    let view_formats = wgpu::DownlevelFlags::VIEW_FORMATS;
-    assert!(REQUIRED_DOWNLEVEL_FLAGS.contains(view_formats));
-    // Keep every other capability, isolating the missing GL/GLES texture-view support.
-    let adapter = capabilities(
-        wgpu::DownlevelFlags::all() - view_formats,
-        render::required_vertex_storage_buffers(),
+fn adapters_without_alternate_views_or_sample_shading_are_candidates() {
+    let optional = wgpu::DownlevelFlags::VIEW_FORMATS | wgpu::DownlevelFlags::MULTISAMPLED_SHADING;
+    assert!(
+        meets_requirements(capabilities(
+            wgpu::DownlevelFlags::all() - optional,
+            render::required_vertex_storage_buffers(),
+        ))
+        .is_ok()
     );
-    let error = meets_requirements(adapter).unwrap_err();
-    assert!(error.to_string().contains("VIEW_FORMATS"));
 }
 
 #[test]

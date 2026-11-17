@@ -2102,6 +2102,29 @@ Flathub submission remain incomplete.
   shader-module destruction, including each pipeline's temporary stage modules, and
   pipeline-cache creation, reads and destruction. One Snapdragon tester still reports a crash
   just after the menu on the first nightly with the lock; that crash report is still missing.
+  OpenGL/GLES is exposed in Video settings and native startup candidates on Windows, Linux and
+  Android, after the preferred modern APIs. Startup retains capability checks and crash recovery.
+  End-to-end GL shader, surface and driver acceptance is incomplete; devices lacking required
+  storage buffers or other mandatory renderer capabilities remain unsupported. Alternate views
+  now use a single-format fallback, absent sample shading disables MSAA before view preparation,
+  and GL always selects direct terrain draws and CPU culling. GL UI filtering and terrain image
+  bindings avoid multiple samplers per image; single-format terrain restores gamma after sRGB
+  sampling. Array allocation padding avoids GLES D2/cube target inference while uploads and
+  CPU layer indices remain logical. Labels match their single-format target and composite.
+  Stable 1.99 locked default/no-default release compilation remains blocked by dependency access
+  in the current environment. An HD 4600 tester reports successful GL initialization, array
+  allocation and presentation, but UI shader parsing blocked UI display. UI now registers pure
+  WGSL hardware/software filter assets; UI, shape and label pipelines rebuild at RenderStartup
+  after device installation, and Enhanced shadow shaders receive the single-sampler capability.
+  Post-fix UI visual acceptance and non-sRGB-only surface qualification remain incomplete. No 400 FPS
+  performance claim is verified. Actor coverage partitioning uses reusable classification buffers
+  and sorted membership keys instead of sorting instances with repeated linear lookups. Shadow
+  containment and uniforms share cached planes; mesh construction uses fixed-size storage.
+  Terrain publication deltas skip unchanged columns and retire sections with a linear merge.
+  Transparent slots use copy-on-write references with independent layout commits, reject oversized
+  urgent work before copying, and preallocate full repacks. Uniform water tints are resolved once
+  per group; single-view selection no longer allocates or sorts a view list. These CPU work
+  reductions still need workspace regression checks and target-device frame captures.
   Terrain has a four-storage-buffer layout for constrained devices, with CPU culling and shared actor and hand bone endpoints. Unsupported graphics devices return a
   startup error through the desktop dialog or Android activity. Shader packs report a load error and
   keep native rendering when their helper kernels exceed the device's per-stage storage budget.

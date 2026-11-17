@@ -1,7 +1,26 @@
 // Shared record and view declarations are supplied by raster::shader_source.
 const SEAM_MAX_STEP: f32 = RASTER_SEAM_MAX_STEP;
 @group(0) @binding(0) var<uniform> view: CullView;
-@group(0) @binding(1) var<storage, read> records: array<CullRecord>;
+@group(0) @binding(1) var<storage, read> records: array<vec4<u32>>;
+
+// Raw storage preserves the 64-byte CPU record without a std430 struct block.
+fn load_records(index: u32) -> CullRecord {
+    let base = index * 4u;
+    return CullRecord(bitcast<i32>(records[base + 0u].x),
+        bitcast<i32>(records[base + 0u].y),
+        bitcast<i32>(records[base + 0u].z),
+        bitcast<i32>(records[base + 0u].w),
+        records[base + 1u].x,
+        records[base + 1u].y,
+        records[base + 1u].z,
+        records[base + 1u].w,
+        array<u32, 3>(records[base + 2u].x, records[base + 2u].y, records[base + 2u].z),
+        records[base + 2u].w,
+        records[base + 3u].x,
+        records[base + 3u].y,
+        records[base + 3u].z,
+        records[base + 3u].w);
+}
 @group(0) @binding(3) var<storage, read_write> history: array<atomic<u32>>;
 
 // Decodes one local bound without introducing a second record layout.
@@ -66,7 +85,7 @@ fn project_box(record: CullRecord) -> ProjectedBox {
 fn raster_prepare(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (gid.x < view.params.x) {
         let old = select(0u, HISTORY_VISIBLE, (atomicLoad(&history[gid.x]) & HISTORY_RASTER_VISIBLE) != 0u);
-        atomicStore(&history[gid.x], old | select(0u, HISTORY_RASTER_VISIBLE, project_box(records[gid.x]).unconditional));
+        atomicStore(&history[gid.x], old | select(0u, HISTORY_RASTER_VISIBLE, project_box(load_records(gid.x)).unconditional));
     }
 }
 
@@ -78,7 +97,7 @@ struct BoxVertex {
 // Rasterises the padded projected rectangle at the nearest conservative box depth.
 @vertex
 fn raster_box(@builtin(vertex_index) vertex: u32, @builtin(instance_index) slot: u32) -> BoxVertex {
-    let record = records[slot];
+    let record = load_records(slot);
     let bounds = project_box(record);
     var out: BoxVertex;
     out.slot = slot;

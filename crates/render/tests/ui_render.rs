@@ -4,6 +4,9 @@
     reason = "fixtures exercise a subset of queue upload entry points"
 )]
 mod queue_writes;
+#[path = "../src/texture_compat.rs"]
+#[allow(dead_code, reason = "UI fixtures share texture compatibility helpers")]
+mod texture_compat;
 use bevy::ecs::system::RunSystemOnce;
 #[path = "../src/render_test_support.rs"]
 #[allow(
@@ -201,7 +204,7 @@ fn repeated_draw_lists_reuse_shared_gpu_resources_and_preserve_batch_order() {
 
 #[test]
 fn shader_validates_all_entry_points() {
-    let source = ui_render::shader::source(include_str!("../src/ui.wgsl"));
+    let source = ui_render::shader::source(include_str!("../src/ui.wgsl"), false);
     let module = naga::front::wgsl::parse_str(&source)
         .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&source)));
     naga::valid::Validator::new(
@@ -340,7 +343,7 @@ fn ui_model_material_cutoff_is_finite_and_independent_of_glyph_half_alpha() {
     vertices[0].alpha_cutoff = f32::NAN;
     input.vertices = vertices.into();
     assert_eq!(input.validate(), Err(UiRenderRejectReason::NonFiniteVertex));
-    let source = ui_render::shader::source(include_str!("../src/ui.wgsl"));
+    let source = ui_render::shader::source(include_str!("../src/ui.wgsl"), false);
     assert!(source.contains("if input.alpha_cutoff >= 0.0"));
     assert!(source.contains("sample.a < input.alpha_cutoff"));
     assert!(source.contains("else if (input.style_flags & STYLE_ALPHA_TEST)"));
@@ -362,7 +365,7 @@ fn ui_model_light_preserves_float_vertex_values_and_rejects_invalid_multipliers(
         input.vertices = vertices.clone().into();
         assert_eq!(input.validate(), Err(UiRenderRejectReason::NonFiniteVertex));
     }
-    let source = ui_render::shader::source(include_str!("../src/ui.wgsl"));
+    let source = ui_render::shader::source(include_str!("../src/ui.wgsl"), false);
     assert!(source.contains("@location(5) model_light: f32"));
     assert!(source.contains("straight_color.a * input.model_light"));
 }

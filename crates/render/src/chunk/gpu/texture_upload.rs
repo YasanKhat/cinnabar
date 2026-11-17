@@ -32,9 +32,11 @@ pub(super) fn build_carrier_texture_assets(
     _previous: Option<&PreparedChunkTextureAssets>,
     device: &RenderDevice,
     queue: &RenderQueue,
+    alternate_views: bool,
 ) -> Option<(PreparedChunkTextureAssets, ChunkTextureUploadStats)> {
     let carrier = assets.with_updated_enhanced(None);
-    let (mut prepared, mut stats) = build_chunk_texture_assets(&carrier, device, queue)?;
+    let (mut prepared, mut stats) =
+        build_chunk_texture_assets(&carrier, device, queue, alternate_views)?;
     prepared.identity = assets.binding_identity();
     #[cfg(feature = "enhanced")]
     if let Some(previous) = _previous.filter(|previous| {
@@ -67,6 +69,7 @@ pub(in crate::chunk) fn build_chunk_texture_assets(
     assets: &ChunkTextureAssets,
     render_device: &RenderDevice,
     render_queue: &RenderQueue,
+    alternate_views: bool,
 ) -> Option<(PreparedChunkTextureAssets, ChunkTextureUploadStats)> {
     let _zone = bevy::log::info_span!("pack_apply.gpu_atlas").entered();
     let identity = assets.binding_identity();
@@ -321,6 +324,7 @@ pub(in crate::chunk) fn build_chunk_texture_assets(
             render_queue,
             texture,
             &plans,
+            alternate_views,
             match index {
                 0 => "global chunk texture page 0",
                 1 => "global chunk texture page 1",
@@ -372,6 +376,7 @@ pub(in crate::chunk) fn build_chunk_texture_assets(
             render_queue,
             enhanced_pages[0],
             &enhanced_upload_plans[0],
+            alternate_views,
             "authored Enhanced color page 0",
         );
     #[cfg(feature = "enhanced")]
@@ -381,6 +386,7 @@ pub(in crate::chunk) fn build_chunk_texture_assets(
             render_queue,
             enhanced_pages[1],
             &enhanced_upload_plans[1],
+            alternate_views,
             "authored Enhanced color page 1",
         );
     #[cfg(feature = "enhanced")]
@@ -425,16 +431,20 @@ pub(in crate::chunk) fn build_chunk_texture_assets(
         contents: bytemuck::cast_slice(enhanced_texture_refs),
         usage: BufferUsages::STORAGE,
     });
-    // Current atlas upload retains RGBA8_UNORM.
-    // A view of each existing allocation preserves gamma-space filtering for
-    // world leaves without duplicating texture memory or changing other art.
+    // Share each uploaded sRGB allocation. Native adapters reinterpret encoded bytes;
+    // single-format adapters keep sRGB views and restore gamma in the terrain shaders.
     let native_leaf_views = textures
         .iter()
-        .map(|texture| {
+        .zip(&terrain_pages)
+        .map(|(texture, page)| {
             texture.create_view(&TextureViewDescriptor {
                 label: Some("native world leaf atlas view"),
-                format: Some(TextureFormat::Rgba8Unorm),
+                format: Some(crate::texture_compat::encoded_format(
+                    texture.format(),
+                    alternate_views,
+                )),
                 dimension: Some(TextureViewDimension::D2Array),
+                array_layer_count: Some(page.layers),
                 ..Default::default()
             })
         })
@@ -554,6 +564,7 @@ pub(in crate::chunk) fn upload_texture_page(
     render_queue: &RenderQueue,
     texture_array: &TextureArray,
     upload_plans: &[TextureMipUploadPlan],
+    alternate_views: bool,
     label: &'static str,
 ) -> (Texture, TextureView, u64) {
     upload_texture_page_format(
@@ -563,7 +574,11 @@ pub(in crate::chunk) fn upload_texture_page(
         upload_plans,
         label,
         TextureFormat::Rgba8UnormSrgb,
-        &[TextureFormat::Rgba8Unorm],
+        if alternate_views {
+            &[TextureFormat::Rgba8Unorm]
+        } else {
+            &[]
+        },
     )
 }
 
@@ -605,14 +620,23 @@ fn upload_texture_page_format(
         size: Extent3d {
             width: texture_array.mips.first().map_or(1, |mip| mip.size),
             height: texture_array.mips.first().map_or(1, |mip| mip.size),
-            depth_or_array_layers: texture_array.layers,
+            depth_or_array_layers: crate::texture_compat::d2_array_layers(
+                render_device,
+                texture_array.mips[0].size,
+                texture_array.mips[0].size,
+                texture_array.layers,
+            ),
         },
         mip_level_count,
         sample_count: 1,
         dimension: TextureDimension::D2,
         format,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-        view_formats,
+        view_formats: if crate::texture_compat::device_alternate_views(render_device) {
+            view_formats
+        } else {
+            &[]
+        },
     });
     let queue_upload_bytes = write_texture_mips(texture_array, upload_plans, |plan, bytes| {
         render_queue.profiled_write_texture(
@@ -676,7 +700,8 @@ mod tests {
         let device = RenderDevice::from(device);
         let queue = RenderQueue::new(queue);
         let carrier = ChunkTextureAssets::default();
-        let (prepared, stats) = build_chunk_texture_assets(&carrier, &device, &queue).unwrap();
+        let (prepared, stats) =
+            build_chunk_texture_assets(&carrier, &device, &queue, true).unwrap();
         assert_eq!(prepared.identity, carrier.binding_identity());
         let pages = carrier.assets().texture_pages();
         let fallback = diagnostic_texture_page(&pages[0].texture).unwrap();
@@ -717,7 +742,7 @@ mod tests {
         let queue = RenderQueue::new(queue);
         let base = Arc::new(RuntimeAssets::diagnostic());
         let carrier = ChunkTextureAssets::new(base.clone());
-        assert!(build_chunk_texture_assets(&carrier, &device, &queue).is_some());
+        assert!(build_chunk_texture_assets(&carrier, &device, &queue, true).is_some());
         let array = TextureArray {
             layers: 2,
             mips: [TextureMip {
@@ -753,7 +778,7 @@ mod tests {
         let reload = ChunkTextureReload::default();
         reload.request(replacement.clone());
         let request = reload.preparation().expect("requested replacement");
-        let prepared = build_chunk_texture_assets(&replacement, &device, &queue);
+        let prepared = build_chunk_texture_assets(&replacement, &device, &queue, true);
         reload.finish(&request, prepared.is_some());
         assert_eq!(
             reload.status(replacement.binding_identity()),

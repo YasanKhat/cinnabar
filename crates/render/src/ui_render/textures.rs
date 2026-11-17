@@ -414,7 +414,12 @@ fn create_texture(device: &RenderDevice, bucket: &render_model::UiTextureBucket)
         size: Extent3d {
             width: bucket.dimensions[0],
             height: bucket.dimensions[1],
-            depth_or_array_layers: bucket.layers,
+            depth_or_array_layers: crate::texture_compat::d2_array_layers(
+                device,
+                bucket.dimensions[0],
+                bucket.dimensions[1],
+                bucket.layers,
+            ),
         },
         mip_level_count: bucket.mip_level_count,
         sample_count: 1,
@@ -437,6 +442,7 @@ fn bind_texture(
     let view = texture.create_view(&TextureViewDescriptor {
         label: Some("bounded UI dimension bucket view"),
         dimension: Some(TextureViewDimension::D2Array),
+        array_layer_count: Some(bucket.layers),
         ..Default::default()
     });
     let format = render_model::ui_page_uniform::words(bucket.format == UiTextureFormat::Coverage);

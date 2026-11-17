@@ -20,65 +20,87 @@ struct BiomeTintGpu {
 
 @group(0) @binding(7) var<storage, read> biome_records: array<u32>;
 @if(!PACKED_TERRAIN)
-@group(0) @binding(8) var<storage, read> biome_tints: array<BiomeTintGpu>;
+@group(0) @binding(8) var<storage, read> biome_tints: array<u32>;
 
 // Returns the palette count without including adjacent packed tables.
+fn simplex_gradient(index: u32) -> vec2<f32> {
+    switch index {
+        case 0u: { return vec2(1.0,1.0); }
+        case 1u: { return vec2(-1.0,1.0); }
+        case 2u: { return vec2(1.0,-1.0); }
+        case 3u: { return vec2(-1.0,-1.0); }
+        case 4u: { return vec2(1.0,0.0); }
+        case 5u: { return vec2(-1.0,0.0); }
+        case 6u: { return vec2(1.0,0.0); }
+        case 7u: { return vec2(-1.0,0.0); }
+        case 8u: { return vec2(0.0,1.0); }
+        case 9u: { return vec2(0.0,-1.0); }
+        case 10u: { return vec2(0.0,1.0); }
+        case 11u: { return vec2(0.0,-1.0); }
+        default: { return vec2(0.0); }
+    }
+}
+
 fn biome_tints_length() -> u32 {
-    @if(!PACKED_TERRAIN) return arrayLength(&biome_tints);
+    @if(!PACKED_TERRAIN) return arrayLength(&biome_tints) / BIOME_TINT_WORDS;
     @if(PACKED_TERRAIN) return terrain_length(8u) / BIOME_TINT_WORDS;
 }
 
 // Reads only the requested palette field, avoiding a seasonal-array copy.
 fn tint_grass(index: u32) -> u32 {
-    @if(!PACKED_TERRAIN) return biome_tints[index].grass;
+    @if(!PACKED_TERRAIN) return biome_tints[index * BIOME_TINT_WORDS + 0u];
     @if(PACKED_TERRAIN) return terrain_field(8u, index, BIOME_TINT_WORDS, 0u);
 }
 
 // Reads only the requested palette field, avoiding a seasonal-array copy.
 fn tint_foliage(index: u32) -> u32 {
-    @if(!PACKED_TERRAIN) return biome_tints[index].foliage;
+    @if(!PACKED_TERRAIN) return biome_tints[index * BIOME_TINT_WORDS + 1u];
     @if(PACKED_TERRAIN) return terrain_field(8u, index, BIOME_TINT_WORDS, 1u);
 }
 
 // Reads only the requested palette field, avoiding a seasonal-array copy.
 fn tint_birch(index: u32) -> u32 {
-    @if(!PACKED_TERRAIN) return biome_tints[index].birch;
+    @if(!PACKED_TERRAIN) return biome_tints[index * BIOME_TINT_WORDS + 2u];
     @if(PACKED_TERRAIN) return terrain_field(8u, index, BIOME_TINT_WORDS, 2u);
 }
 
 // Reads only the requested palette field, avoiding a seasonal-array copy.
 fn tint_evergreen(index: u32) -> u32 {
-    @if(!PACKED_TERRAIN) return biome_tints[index].evergreen;
+    @if(!PACKED_TERRAIN) return biome_tints[index * BIOME_TINT_WORDS + 3u];
     @if(PACKED_TERRAIN) return terrain_field(8u, index, BIOME_TINT_WORDS, 3u);
 }
 
 // Reads only the requested palette field, avoiding a seasonal-array copy.
 fn tint_dry_foliage(index: u32) -> u32 {
-    @if(!PACKED_TERRAIN) return biome_tints[index].dry_foliage;
+    @if(!PACKED_TERRAIN) return biome_tints[index * BIOME_TINT_WORDS + 4u];
     @if(PACKED_TERRAIN) return terrain_field(8u, index, BIOME_TINT_WORDS, 4u);
 }
 
 // Reads only the requested palette field, avoiding a seasonal-array copy.
 fn tint_water(index: u32) -> u32 {
-    @if(!PACKED_TERRAIN) return biome_tints[index].water;
+    @if(!PACKED_TERRAIN) return biome_tints[index * BIOME_TINT_WORDS + 5u];
     @if(PACKED_TERRAIN) return terrain_field(8u, index, BIOME_TINT_WORDS, 5u);
 }
 
 // Reads only the requested palette field, avoiding a seasonal-array copy.
 fn tint_flags(index: u32) -> u32 {
-    @if(!PACKED_TERRAIN) return biome_tints[index].flags;
+    @if(!PACKED_TERRAIN) return biome_tints[index * BIOME_TINT_WORDS + 6u];
     @if(PACKED_TERRAIN) return terrain_field(8u, index, BIOME_TINT_WORDS, 6u);
 }
 
 // Reads only the requested palette field, avoiding a seasonal-array copy.
 fn tint_water_opacity(index: u32) -> f32 {
-    @if(!PACKED_TERRAIN) return biome_tints[index].water_opacity;
+    @if(!PACKED_TERRAIN) return bitcast<f32>(biome_tints[index * BIOME_TINT_WORDS + 7u]);
     @if(PACKED_TERRAIN) return bitcast<f32>(terrain_field(8u, index, BIOME_TINT_WORDS, 7u));
 }
 
 // Loads one seasonal cell without materializing the complete palette record.
 fn tint_seasonal(index: u32, cell: u32) -> vec4<f32> {
-    @if(!PACKED_TERRAIN) return biome_tints[index].seasonal_foliage[cell];
+    @if(!PACKED_TERRAIN) {
+        if (index >= biome_tints_length() || cell >= SEASONAL_FOLIAGE_COUNT) { return vec4(0.0); }
+        let base = index * BIOME_TINT_WORDS + 8u + cell * 4u;
+        return bitcast<vec4<f32>>(vec4(biome_tints[base], biome_tints[base + 1u], biome_tints[base + 2u], biome_tints[base + 3u]));
+    }
     @if(PACKED_TERRAIN) {
         if (index >= biome_tints_length() || cell >= SEASONAL_FOLIAGE_COUNT) { return vec4(0.0); }
         let base = index * BIOME_TINT_WORDS + 8u + cell * 4u;
@@ -324,10 +346,10 @@ fn blended_biome_tint_gamma(
 
 // Vanilla uses float simplex coordinates and the 12-entry gradient order.
 fn grass_corner(cell: vec2<i32>, offset: vec2<f32>) -> f32 {
-    let gradients = array<vec2<f32>, 12>(vec2(1.0,1.0),vec2(-1.0,1.0),vec2(1.0,-1.0),vec2(-1.0,-1.0),vec2(1.0,0.0),vec2(-1.0,0.0),vec2(1.0,0.0),vec2(-1.0,0.0),vec2(0.0,1.0),vec2(0.0,-1.0),vec2(0.0,1.0),vec2(0.0,-1.0));
+
     let hash = grass_permutation((u32(cell.x) + grass_permutation(u32(cell.y) & GRASS_PERMUTATION_MASK)) & GRASS_PERMUTATION_MASK) % 12u;
     let t = max(0.0, (0.5 - offset.x * offset.x) - offset.y * offset.y);
-    let gradient = gradients[hash];
+    let gradient = simplex_gradient(hash);
     return (offset.y * gradient.y + offset.x * gradient.x) * t * t * t * t;
 }
 
@@ -336,7 +358,7 @@ fn grass_palette_index(world_xz: vec2<i32>) -> u32 {
     let p = vec2<f32>(world_xz) * 0.0225;
     let skew = (p.x + p.y) * bitcast<f32>(0x3ebb67aeu);
     let skewed = p + vec2(skew);
-    let cell = vec2<i32>(skewed) - select(vec2(0), vec2(1), skewed <= vec2(0.0));
+    let cell = vec2<i32>(skewed) - vec2(select(0, 1, skewed.x <= 0.0), select(0, 1, skewed.y <= 0.0));
     let unskew = f32(cell.x + cell.y) * bitcast<f32>(0x3e58658cu);
     let first = p - (vec2<f32>(cell) - vec2(unskew));
     let step = select(vec2(0, 1), vec2(1, 0), first.x > first.y);

@@ -33,6 +33,9 @@ impl FromWorld for EnhancedShadowPipelines {
     fn from_world(world: &mut World) -> Self {
         let (layout, cube, model, offsets, compact) = crate::chunk::enhanced::shadow_sources(world);
         let mut shader_defs = vec!["ENHANCED_SHADOW".into()];
+        if !crate::texture_compat::world_alternate_views(world) {
+            shader_defs.push("SINGLE_SAMPLER".into());
+        }
         if compact {
             shader_defs.push("PACKED_TERRAIN".into());
         }

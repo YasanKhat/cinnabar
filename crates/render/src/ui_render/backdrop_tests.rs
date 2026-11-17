@@ -385,7 +385,7 @@ fn backdrop_vertices_read_the_shared_ui_viewport_layout() {
     };
     assert_eq!(
         layout(include_str!("../ui_backdrop.wgsl")),
-        layout(&shader::source(include_str!("../ui.wgsl")))
+        layout(&shader::source(include_str!("../ui.wgsl"), false))
     );
 }
 

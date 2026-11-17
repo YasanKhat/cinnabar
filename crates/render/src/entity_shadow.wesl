@@ -11,9 +11,9 @@ struct ShadowParams {
 
 @group(0) @binding(0) var<uniform> view: View;
 @if(MULTISAMPLED)
-@group(0) @binding(1) var scene_depth: texture_depth_multisampled_2d;
+@group(0) @binding(1) var scene_depth: texture_multisampled_2d<f32>;
 @if(!MULTISAMPLED)
-@group(0) @binding(1) var scene_depth: texture_depth_2d;
+@group(0) @binding(1) var scene_depth: texture_2d<f32>;
 // Feet in xyz, radius in w.
 @group(0) @binding(3) var<storage, read> casters: array<vec4<f32>>;
 @group(0) @binding(4) var<uniform> params: ShadowParams;
@@ -62,9 +62,9 @@ fn shadow_fragment(in: VertexOutput,
 ) -> @location(0) vec4<f32> {
     let pixel = vec2<i32>(floor(in.position.xy));
     @if(MULTISAMPLED)
-    let depth = textureLoad(scene_depth, pixel, i32(sample));
+    let depth = textureLoad(scene_depth, pixel, i32(sample)).r;
     @if(!MULTISAMPLED)
-    let depth = textureLoad(scene_depth, pixel, 0);
+    let depth = textureLoad(scene_depth, pixel, 0).r;
     // Reverse depth: zero is the sky.
     if depth <= 0.0 {
         discard;

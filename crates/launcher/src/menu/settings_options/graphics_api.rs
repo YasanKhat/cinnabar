@@ -110,12 +110,12 @@ mod tests {
         }
     }
     #[test]
-    fn offered_choices_match_native_candidates_and_omit_gl() {
+    fn offered_choices_match_native_candidates_including_gl() {
         assert_eq!(CHOICES.len(), Backend::AVAILABLE.len() + 1);
         assert!(
-            !CHOICES
+            CHOICES
                 .iter()
-                .any(|choice| matches!(choice.name, "gl" | "gles"))
+                .any(|choice| choice.name == Backend::Gl.name())
         );
         for platform in [
             Platform::Windows,
@@ -145,7 +145,8 @@ mod tests {
                 None,
                 Some(Backend::Vulkan),
                 Some(Backend::Dx12),
-                Some(Backend::Metal)
+                Some(Backend::Metal),
+                Some(Backend::Gl)
             ]
         );
     }

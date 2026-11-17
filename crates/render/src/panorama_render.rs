@@ -23,9 +23,9 @@ use bevy::{
             ColorTargetState, ColorWrites, CompareFunction, DepthStencilState, Extent3d,
             FilterMode, FragmentState, LoadOp, PipelineCache, RenderPassDescriptor, RenderPipeline,
             RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
-            Specializer, SpecializerKey, StoreOp, Texture, TextureDataOrder, TextureDescriptor,
-            TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
-            TextureViewDescriptor, TextureViewDimension, Variants, VertexState,
+            Specializer, SpecializerKey, StoreOp, Texture, TextureDescriptor, TextureDimension,
+            TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor,
+            TextureViewDimension, Variants, VertexState,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         view::{ViewDepthStencilTexture, ViewTarget},
@@ -147,7 +147,8 @@ fn texture_array(
     side: u32,
     pixels: &[u8],
 ) -> (Texture, TextureView) {
-    let texture = device.create_texture_with_data(
+    let texture = crate::texture_compat::d2_array_with_data(
+        device,
         queue,
         &TextureDescriptor {
             label: Some(FACES_LABEL),
@@ -163,12 +164,12 @@ fn texture_array(
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         },
-        TextureDataOrder::LayerMajor,
         pixels,
     );
     let view = texture.create_view(&TextureViewDescriptor {
         label: Some("menu panorama face layers"),
         dimension: Some(TextureViewDimension::D2Array),
+        array_layer_count: Some(6),
         ..default()
     });
     (texture, view)

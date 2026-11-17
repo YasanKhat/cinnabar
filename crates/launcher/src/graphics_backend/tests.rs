@@ -17,10 +17,10 @@ fn adapter(vendor: u32, integrated: bool) -> Adapter {
 fn windows_defaults_to_dx12_then_vulkan() {
     assert_eq!(
         Platform::Windows.backends(),
-        [Backend::Dx12, Backend::Vulkan]
+        [Backend::Dx12, Backend::Vulkan, Backend::Gl]
     );
     for platform in [Platform::Linux, Platform::Android] {
-        assert_eq!(platform.backends(), [Backend::Vulkan]);
+        assert_eq!(platform.backends(), [Backend::Vulkan, Backend::Gl]);
     }
     assert_eq!(Platform::Macos.backends(), [Backend::Metal]);
 }
@@ -31,7 +31,7 @@ fn precedence_respects_overrides_defaults_and_sentinel() {
     assert_eq!(candidates(defaults, defaults, None, None, &[]), defaults);
     assert_eq!(
         candidates(defaults, defaults, None, None, &[Backend::Dx12]),
-        [Backend::Vulkan]
+        [Backend::Vulkan, Backend::Gl]
     );
     assert_eq!(
         candidates(
@@ -54,7 +54,10 @@ fn precedence_respects_overrides_defaults_and_sentinel() {
         [Backend::Dx12]
     );
     assert!(candidates(defaults, defaults, None, None, defaults).is_empty());
-    assert!(candidates(defaults, defaults, None, Some(Backend::Gl), &[]).is_empty());
+    assert_eq!(
+        candidates(defaults, defaults, None, Some(Backend::Gl), &[]),
+        [Backend::Gl]
+    );
     assert!(candidates(defaults, defaults, Some(&[]), None, &[]).is_empty());
 }
 
@@ -122,8 +125,7 @@ fn older_intel_windows_vulkan_rule_ends_at_the_known_working_driver() {
 }
 
 #[test]
-fn available_registry_matches_all_platform_candidates_without_gl() {
-    assert!(!Backend::AVAILABLE.contains(&Backend::Gl));
+fn available_registry_matches_all_platform_candidates() {
     let platforms = [
         Platform::Windows,
         Platform::Linux,
@@ -135,10 +137,16 @@ fn available_registry_matches_all_platform_candidates_without_gl() {
         let supported = platform.backends();
         assert!(supported.iter().all(|api| Backend::AVAILABLE.contains(api)));
         assert_eq!(candidates(supported, supported, None, None, &[]), supported);
-        assert!(!supported.contains(&Backend::Gl));
+        assert_eq!(
+            supported.contains(&Backend::Gl),
+            matches!(
+                platform,
+                Platform::Windows | Platform::Linux | Platform::Android
+            )
+        );
     }
     for api in Backend::ALL {
-        assert_eq!(Backend::AVAILABLE.contains(api), *api != Backend::Gl);
+        assert!(Backend::AVAILABLE.contains(api));
         assert_eq!(
             Backend::AVAILABLE.contains(api),
             platforms.iter().any(|p| p.backends().contains(api))

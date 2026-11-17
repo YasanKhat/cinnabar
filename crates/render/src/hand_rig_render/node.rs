@@ -67,9 +67,10 @@ pub(crate) fn hand_rig<const AFTER_PACK: bool>(
     {
         return Ok(());
     }
-    let encoded = gpu.uniforms.as_ref().is_some_and(|(_, light)| {
-        super::bindings::hand_uses_encoded_color(light, !scene_target.format().is_srgb())
-    });
+    let encoded = gpu.alternate_views
+        && gpu.uniforms.as_ref().is_some_and(|(_, light)| {
+            super::bindings::hand_uses_encoded_color(light, !scene_target.format().is_srgb())
+        });
     let final_world_draw =
         !encoded && !(render_model::enhanced_rendering_enabled() && enhanced) && msaa.samples() > 1;
     let attachments = [Some(if final_world_draw {

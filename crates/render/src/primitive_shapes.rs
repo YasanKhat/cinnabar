@@ -16,7 +16,8 @@ use bevy::{
     asset::{load_internal_asset, uuid_handle},
     prelude::{App, Handle, Plugin, Shader, World},
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems, extract_resource::ExtractResourcePlugin,
+        GpuResourceAppExt, Render, RenderApp, RenderStartup, RenderSystems,
+        extract_resource::ExtractResourcePlugin,
     },
 };
 
@@ -24,10 +25,10 @@ use bevy::{
 pub struct PrimitiveShapesRenderPlugin;
 
 const SHADER: Handle<Shader> = uuid_handle!("361a6dc1-b0e8-41ee-a5ac-94b3e8d6cc48");
-// Debug text retains its existing cubic facing independently of actor nametags.
-const TEXT_ACOS_LINEAR: f32 = 0.87266463;
-const TEXT_ACOS_CUBIC: f32 = -0.698_131_7;
-const TEXT_HORIZONTAL_ZERO: f32 = 0.0001;
+mod shader;
+use shader::shader;
+#[cfg(test)]
+use shader::{TEXT_ACOS_CUBIC, TEXT_ACOS_LINEAR};
 
 impl Plugin for PrimitiveShapesRenderPlugin {
     /// Keeps the domain store in the main world and uploads changes in the render world.
@@ -42,43 +43,15 @@ impl Plugin for PrimitiveShapesRenderPlugin {
         crate::transparent_phase::install(render);
         crate::world_passes::install(render);
         render.init_resource::<pipeline::ShapePipeline>()
+            .init_gpu_resource::<pipeline::ShapePipeline>()
             .add_render_command::<bevy::core_pipeline::core_3d::Transparent3d, pipeline::DrawShapes>()
-            .add_systems(RenderStartup, gpu::init)
+            .add_systems(RenderStartup, gpu::init.after(bevy::render::init_gpu_resource::<pipeline::ShapePipeline>))
             .add_systems(Render, (
                 gpu::prepare.in_set(RenderSystems::PrepareResources),
                 pipeline::prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),
                 pipeline::queue.in_set(crate::world_passes::WorldPassSystems).in_set(RenderSystems::Queue),
             ));
     }
-}
-
-/// Injects the shared font-pixel scale and debug-text constants into its shader.
-fn shader(raw: &str, path: impl Into<String>) -> Shader {
-    let source = raw
-        .replace(
-            "ARROW_KIND_VALUE",
-            &(render_api::primitive_shapes::PrimitiveShapeKind::Arrow as u32).to_string(),
-        )
-        .replace(
-            "BOX_KIND_VALUE",
-            &(render_api::primitive_shapes::PrimitiveShapeKind::Box as u32).to_string(),
-        )
-        .replace(
-            "ALL_DIMENSIONS_VALUE",
-            &render_api::primitive_shapes::PRIMITIVE_ALL_DIMENSIONS.to_string(),
-        )
-        .replace(
-            "ARROW_MIN_LENGTH_SQUARED_VALUE",
-            &render_api::primitive_shapes::PRIMITIVE_ARROW_MIN_LENGTH_SQUARED.to_string(),
-        )
-        .replace(
-            "TEXT_SCALE_VALUE",
-            &render_model::NAMETAG_BLOCKS_PER_FONT_PIXEL.to_string(),
-        )
-        .replace("ACOS_LINEAR_VALUE", &TEXT_ACOS_LINEAR.to_string())
-        .replace("ACOS_CUBIC_VALUE", &TEXT_ACOS_CUBIC.to_string())
-        .replace("HORIZONTAL_ZERO_VALUE", &TEXT_HORIZONTAL_ZERO.to_string());
-    crate::shader_safety::from_wesl(source, path)
 }
 
 /// Identifies the debug draw family for encoded-color transparency routing.

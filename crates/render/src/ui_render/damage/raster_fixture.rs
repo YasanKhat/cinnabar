@@ -161,7 +161,7 @@ impl Raster {
                 bind_group_layouts: &[Some(&bindings)],
                 immediate_size: 0,
             });
-        let source = super::super::super::shader::source(include_str!("../../ui.wgsl"));
+        let source = super::super::super::shader::source(include_str!("../../ui.wgsl"), false);
         let clear_shader = gpu
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {

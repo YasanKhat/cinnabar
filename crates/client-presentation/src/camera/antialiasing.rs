@@ -84,6 +84,9 @@ pub(super) fn install_device_support(app: &mut App) {
 
 /// Honors both adapter capabilities and the features actually enabled on its device.
 pub fn device_support(adapter: &RenderAdapter, device: &RenderDevice) -> CameraAntiAliasingSupport {
+    if !backend_supports_msaa(adapter.get_info().backend.into()) {
+        return CameraAntiAliasingSupport(ui::AntiAliasingSupport::from_counts([1]));
+    }
     let features = device.features();
     let format_features = |format: TextureFormat| {
         if features.contains(WgpuFeatures::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) {
@@ -519,5 +522,27 @@ mod tests {
         app.update();
         assert!(app.world().get::<Smaa>(world_camera).is_none());
         assert_eq!(app.world().get::<Msaa>(world_camera).unwrap().samples(), 4);
+    }
+}
+
+/// GL 4.3 lacks GL_ARB_shader_texture_image_samples (GL 4.5), and GLES
+/// cannot query textureSamples for Naga's robust multisampled image loads.
+fn backend_supports_msaa(backend: bevy::render::settings::Backends) -> bool {
+    backend != bevy::render::settings::Backends::GL
+}
+
+#[test]
+fn gl_sample_counts_are_restricted_before_attachment_selection() {
+    assert!(!backend_supports_msaa(bevy::render::settings::Backends::GL));
+    for backend in [
+        bevy::render::settings::Backends::VULKAN,
+        bevy::render::settings::Backends::DX12,
+        bevy::render::settings::Backends::METAL,
+    ] {
+        assert!(backend_supports_msaa(backend));
+    }
+    let support = CameraAntiAliasingSupport(ui::AntiAliasingSupport::from_counts([1]));
+    for count in [1, 2, 4, 8] {
+        assert_eq!(support.msaa(count), Msaa::Off);
     }
 }

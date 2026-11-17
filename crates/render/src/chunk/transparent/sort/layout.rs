@@ -227,30 +227,48 @@ fn patch_slot(
     if used > (live * 2).max(live + MIN_FRAGMENTED_REFS) {
         return None;
     }
-    // The new slot is one copy of the base; changed groups are then written in place.
-    let mut refs = base
-        .refs
+    // Reject staging-only work before copying a potentially full-size reference slot.
+    let urgent_refs: usize = placements
         .iter()
-        .copied()
-        .chain(std::iter::repeat(PackedTransparentDrawRef::default()))
-        .take(used)
-        .collect::<Arc<[_]>>();
-    let slot = Arc::get_mut(&mut refs).expect("a newly collected slot has one owner");
+        .zip(&ranges)
+        .filter(|((_, placement), _)| matches!(placement, Placement::Moved(_)))
+        .map(|(_, range)| range.len())
+        .sum();
+    if urgent_refs > upload_cap {
+        return None;
+    }
+    // Membership or class changes need not change the reference bytes. Share the base until
+    // the first actual write; readers of the committed slot keep their immutable snapshot.
+    let mut refs = if used == base.refs.len() {
+        Arc::clone(&base.refs)
+    } else {
+        base.refs
+            .iter()
+            .copied()
+            .chain(std::iter::repeat(PackedTransparentDrawRef::default()))
+            .take(used)
+            .collect::<Arc<[_]>>()
+    };
     let (mut urgent, mut deferred) = (Vec::new(), Vec::new());
     for ((_, placement), range) in placements.iter().zip(&ranges) {
         let span = range.start as usize..range.end as usize;
         match placement {
             Placement::Keep(_) => {}
             Placement::InPlace(_, sorted) => {
-                deferred.extend(
-                    changed_ref_spans(&slot[span.clone()], sorted)
-                        .into_iter()
-                        .map(|changed| span.start + changed.start..span.start + changed.end),
-                );
-                slot[span].copy_from_slice(sorted);
+                let changed = changed_ref_spans(&refs[span.clone()], sorted);
+                if !changed.is_empty() {
+                    deferred.extend(
+                        changed
+                            .into_iter()
+                            .map(|changed| span.start + changed.start..span.start + changed.end),
+                    );
+                    Arc::make_mut(&mut refs)[span].copy_from_slice(sorted);
+                }
             }
             Placement::Moved(sorted) => {
-                slot[span.clone()].copy_from_slice(sorted);
+                if refs[span.clone()] != **sorted {
+                    Arc::make_mut(&mut refs)[span.clone()].copy_from_slice(sorted);
+                }
                 if !span.is_empty() {
                     urgent.push(span);
                 }
@@ -262,9 +280,6 @@ fn patch_slot(
         urgent,
         deferred,
     };
-    if patch.urgent_refs() > upload_cap {
-        return None;
-    }
     let (groups, classes) = layout_entries(allocations, placements, &ranges);
     Some(TransparentSortOutput {
         refs,
@@ -285,7 +300,14 @@ fn pack_slot(
     base: Option<&TransparentLayoutBase>,
     sorted_refs: usize,
 ) -> TransparentSortOutput {
-    let mut refs = Vec::new();
+    let ref_count = placements
+        .iter()
+        .map(|(_, placement)| match placement {
+            Placement::Keep(range) => range.len(),
+            Placement::InPlace(_, sorted) | Placement::Moved(sorted) => sorted.len(),
+        })
+        .sum();
+    let mut refs = Vec::with_capacity(ref_count);
     let mut ranges = Vec::with_capacity(placements.len());
     for (_, placement) in &placements {
         let start = refs.len() as u32;

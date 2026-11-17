@@ -5,14 +5,47 @@ import render::lighting::{terrain_light_levels, terrain_light_colour, world_fog_
 import render::world_projection::{section_camera_offset, camera_offset_clip};
 
 // The frames of one marker's art, selected by the shared terrain animation clock.
+struct FragmentInput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    // Bits 8..16 hold the cell light.
+    @location(1) @interpolate(flat) packed: u32,
+    // Page and layer of the current frame, then of the frame blended towards.
+    @location(2) @interpolate(flat) frames: vec4<u32>,
+    // UV scales of both frames and the blend weight towards the second.
+    @location(3) @interpolate(flat) frame_mix: vec3<f32>,
+    // Source-to-page gradient scales of both frames.
+    @location(4) @interpolate(flat) gradient_scales: vec4<f32>,
+    @location(5) camera_offset: vec3<f32>,
+}
+
 struct MarkerAnimation { frame_start: u32, frame_count: u32, ticks_per_frame: u32, flags: u32 }
 // One frame's texture page, array layer, exposed UV scale and source-to-page size ratio.
 struct MarkerTexture { page: u32, layer: u32, uv_scale: f32, reserved: u32, gradient_scale: vec2<f32> }
 struct MarkerClock { tick: u32, partial_tick: f32, reserved_a: u32, reserved_b: u32 }
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(0) @binding(1) var<storage, read> marker_animations: array<MarkerAnimation>;
-@group(0) @binding(2) var<storage, read> marker_textures: array<MarkerTexture>;
+@group(0) @binding(1) var<storage, read> marker_animations: array<vec4<u32>>;
+
+// Raw storage preserves the 16-byte CPU record without a std430 struct block.
+fn load_marker_animations(index: u32) -> MarkerAnimation {
+    let base = index * 1u;
+    return MarkerAnimation(marker_animations[base + 0u].x,
+        marker_animations[base + 0u].y,
+        marker_animations[base + 0u].z,
+        marker_animations[base + 0u].w);
+}
+@group(0) @binding(2) var<storage, read> marker_textures: array<u32>;
+
+// Raw storage preserves the 24-byte CPU record without a std430 struct block.
+fn load_marker_textures(index: u32) -> MarkerTexture {
+    let base = index * 6u;
+    return MarkerTexture(marker_textures[base + 0u],
+        marker_textures[base + 1u],
+        bitcast<f32>(marker_textures[base + 2u]),
+        marker_textures[base + 3u],
+        vec2<f32>(bitcast<f32>(marker_textures[base + 4u]), bitcast<f32>(marker_textures[base + 5u])));
+}
 @group(0) @binding(3) var<uniform> clock: MarkerClock;
 @group(0) @binding(4) var page_0: texture_2d_array<f32>;
 @group(0) @binding(5) var page_1: texture_2d_array<f32>;
@@ -82,7 +115,7 @@ fn marker_vertex(
         local = vec3(0.5) + right * (corner.x - 0.5) + up * (corner.y - 0.5);
     }
     var out: VertexOutput;
-    let animation = marker_animations[animation_index];
+    let animation = load_marker_animations(animation_index);
     if (animation.frame_count == 0u) {
         // A face without art collapses to a point and draws nothing.
         out.clip_position = vec4(0.0);
@@ -98,8 +131,8 @@ fn marker_vertex(
     let current = (clock.tick / ticks) % count;
     let blends = (animation.flags & 1u) != 0u && count > 1u;
     let next = select(current, (current + 1u) % count, blends);
-    let current_texture = marker_textures[animation.frame_start + current];
-    let next_texture = marker_textures[animation.frame_start + next];
+    let current_texture = load_marker_textures(animation.frame_start + current);
+    let next_texture = load_marker_textures(animation.frame_start + next);
     let blend = (f32(clock.tick % ticks) + clamp(clock.partial_tick, 0.0, 0.99999994)) / f32(ticks);
     out.frames = vec4(current_texture.page, current_texture.layer, next_texture.page, next_texture.layer);
     out.frame_mix = vec3(current_texture.uv_scale, next_texture.uv_scale, select(0.0, blend, blends));
@@ -120,7 +153,7 @@ fn sample_page(page: u32, uv: vec2<f32>, layer: i32, dx: vec2<f32>, dy: vec2<f32
 }
 
 @fragment
-fn marker_fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+fn marker_fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     let dx = dpdx(in.uv);
     let dy = dpdy(in.uv);
     let current = in.uv * in.frame_mix.x;

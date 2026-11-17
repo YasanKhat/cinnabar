@@ -35,7 +35,8 @@ pub(super) const TEXT_FRONT_FACE: FrontFace = FrontFace::Cw;
 struct ShapeSpecializer;
 #[derive(Resource)]
 pub(super) struct ShapePipeline {
-    variants: Variants<RenderPipeline, ShapeSpecializer>,
+    variants:
+        Variants<RenderPipeline, crate::texture_compat::ViewFormatSpecializer<ShapeSpecializer>>,
     layout: BindGroupLayoutDescriptor,
 }
 
@@ -59,7 +60,7 @@ fn buffer_entry(binding: u32, bytes: u64, uniform: bool, dynamic: bool) -> BindG
 
 impl FromWorld for ShapePipeline {
     /// Shares actor, instance, text and clock bindings between all mesh variants.
-    fn from_world(_: &mut World) -> Self {
+    fn from_world(world: &mut World) -> Self {
         let layout = BindGroupLayoutDescriptor::new(
             "primitive shape layout",
             &[
@@ -90,7 +91,10 @@ impl FromWorld for ShapePipeline {
         let mut descriptor = descriptor();
         descriptor.layout.push(layout.clone());
         Self {
-            variants: Variants::new(ShapeSpecializer, descriptor),
+            variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(ShapeSpecializer, world),
+                descriptor,
+            ),
             layout,
         }
     }

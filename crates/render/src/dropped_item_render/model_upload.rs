@@ -256,7 +256,7 @@ fn upload(
             BufferUsages::VERTEX,
         )?)
     };
-    let texture = gpu_allocation::texture_with_data(
+    let texture = gpu_allocation::array_texture_with_data(
         device,
         queue,
         &TextureDescriptor {
@@ -279,6 +279,7 @@ fn upload(
         texture.create_view(&TextureViewDescriptor {
             label: Some("dropped item texture layer array"),
             dimension: Some(TextureViewDimension::D2Array),
+            array_layer_count: Some(layers),
             ..Default::default()
         })
     })?;

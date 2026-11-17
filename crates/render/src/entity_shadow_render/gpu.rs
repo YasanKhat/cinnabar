@@ -3,6 +3,7 @@ use render_scene::{AtmosphereFrame, EntityShadowScene};
 
 #[derive(Resource)]
 pub(crate) struct EntityShadowGpu {
+    alternate_views: bool,
     pub(super) mesh: Buffer,
     pub(super) instances: Buffer,
     pub(super) capacity: u64,
@@ -51,7 +52,7 @@ impl EntityShadowGpu {
                         1,
                         fragment,
                         BindingType::Texture {
-                            sample_type: TextureSampleType::Depth,
+                            sample_type: TextureSampleType::Float { filterable: false },
                             view_dimension: TextureViewDimension::D2,
                             multisampled,
                         },
@@ -80,6 +81,7 @@ impl EntityShadowGpu {
             )
         });
         Self {
+            alternate_views: crate::texture_compat::device_alternate_views(device),
             mesh,
             instances: instance_buffer(device, 64),
             capacity: 64,
@@ -129,7 +131,11 @@ impl crate::pipeline_warmup::PrewarmPipelines for EntityShadowGpu {
         } else {
             render_scene::SCENE_COLOR_FORMAT
         };
-        ids.push(self.pipeline(cache, format.remove_srgb_suffix(), view.msaa.samples()));
+        ids.push(self.pipeline(
+            cache,
+            crate::texture_compat::encoded_format(format, self.alternate_views),
+            view.msaa.samples(),
+        ));
         Ok(())
     }
 }

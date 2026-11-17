@@ -28,7 +28,7 @@ use bevy::{
         Result, Shader, World, default,
     },
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems,
+        GpuResourceAppExt, Render, RenderApp, RenderStartup, RenderSystems,
         extract_resource::ExtractResourcePlugin,
         render_phase::{
             DrawFunctionId, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
@@ -124,8 +124,12 @@ pub(crate) fn install_nametag_render(app: &mut App) {
     crate::world_passes::install(app.sub_app_mut(RenderApp));
     app.sub_app_mut(RenderApp)
         .init_resource::<NametagPipeline>()
+        .init_gpu_resource::<NametagPipeline>()
         .add_render_command::<Transparent3d, DrawNametags>()
-        .add_systems(RenderStartup, init_nametag_gpu)
+        .add_systems(
+            RenderStartup,
+            init_nametag_gpu.after(bevy::render::init_gpu_resource::<NametagPipeline>),
+        )
         .add_systems(
             Render,
             (
@@ -253,7 +257,10 @@ struct NametagPipelineSpecializer;
 
 #[derive(Resource)]
 struct NametagPipeline {
-    variants: Variants<RenderPipeline, NametagPipelineSpecializer>,
+    variants: Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<NametagPipelineSpecializer>,
+    >,
     bind_group_layout: BindGroupLayoutDescriptor,
 }
 
@@ -329,7 +336,13 @@ impl FromWorld for NametagPipeline {
             ..default()
         };
         Self {
-            variants: Variants::new(NametagPipelineSpecializer, descriptor),
+            variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(
+                    NametagPipelineSpecializer,
+                    _world,
+                ),
+                descriptor,
+            ),
             bind_group_layout,
         }
     }

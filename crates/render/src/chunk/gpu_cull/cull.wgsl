@@ -67,7 +67,26 @@ struct CullView {
 }
 
 @group(0) @binding(0) var<uniform> view: CullView;
-@group(0) @binding(1) var<storage, read> records: array<CullRecord>;
+@group(0) @binding(1) var<storage, read> records: array<vec4<u32>>;
+
+// Raw storage preserves the 64-byte CPU record without a std430 struct block.
+fn load_records(index: u32) -> CullRecord {
+    let base = index * 4u;
+    return CullRecord(bitcast<i32>(records[base + 0u].x),
+        bitcast<i32>(records[base + 0u].y),
+        bitcast<i32>(records[base + 0u].z),
+        bitcast<i32>(records[base + 0u].w),
+        records[base + 1u].x,
+        records[base + 1u].y,
+        records[base + 1u].z,
+        records[base + 1u].w,
+        array<u32, 3>(records[base + 2u].x, records[base + 2u].y, records[base + 2u].z),
+        records[base + 2u].w,
+        records[base + 3u].x,
+        records[base + 3u].y,
+        records[base + 3u].z,
+        records[base + 3u].w);
+}
 // Slot enabled bits, then from `view.order.x` the slot visited at each rank. Sharing one
 // binding keeps the kernels inside the default eight storage buffers per stage.
 @group(0) @binding(2) var<storage, read> enabled: array<u32>;
@@ -289,7 +308,7 @@ fn unpack_draws(draws: u32) -> vec4<u32> {
 }
 
 fn record_decision(slot: u32) -> u32 {
-    let record = records[slot];
+    let record = load_records(slot);
     let late = view.params.z == PHASE_LATE;
     let visible = record.live != 0u && slot_enabled(slot) && in_frustum(record_origin(record));
     var draw = false;
@@ -421,7 +440,7 @@ fn cull_emit(
         return;
     }
     let offset = group_sums[wid.x] + sums[lid] - mine;
-    let record = records[ranked_slot(gid.x, 0u)];
+    let record = load_records(ranked_slot(gid.x, 0u));
     if (mine.x != 0u) {
         solid_runs(record, true, offset.x);
     }
@@ -429,7 +448,7 @@ fn cull_emit(
         let cutout = cutout_range(record);
         write_args(offset.y, 1u, record, cutout.x, cutout.y);
     }
-    let other = records[ranked_slot(gid.x, 2u)];
+    let other = load_records(ranked_slot(gid.x, 2u));
     if (mine.z != 0u) {
         write_args(offset.z, 2u, other, other.model_start, other.model_count);
     }
@@ -450,7 +469,7 @@ fn cull_occlusion(
     }
     workgroupBarrier();
     if (gid.x < view.params.x) {
-        let record = records[gid.x];
+        let record = load_records(gid.x);
         if (record.live != 0u && !hiz_test(record, true)) {
             atomicOr(&occluded_bits[lid / 32u], 1u << (lid % 32u));
         }

@@ -212,9 +212,7 @@ const REQUIRED_DOWNLEVEL_FLAGS: wgpu::DownlevelFlags = wgpu::DownlevelFlags::BAS
     .union(wgpu::DownlevelFlags::VERTEX_STORAGE)
     .union(wgpu::DownlevelFlags::FRAGMENT_STORAGE)
     .union(wgpu::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED)
-    .union(wgpu::DownlevelFlags::VIEW_FORMATS)
-    .union(wgpu::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES)
-    .union(wgpu::DownlevelFlags::MULTISAMPLED_SHADING);
+    .union(wgpu::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES);
 
 /// A candidate's capability snapshot, independent of native device creation.
 pub(super) struct AdapterCapabilities {

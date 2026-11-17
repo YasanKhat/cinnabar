@@ -7,7 +7,10 @@ pub(super) struct ActorPipelineSpecializer;
 pub(crate) struct ActorPipeline {
     pub(super) compact: bool,
     pub(super) motion_supported: bool,
-    pub(super) variants: Variants<RenderPipeline, ActorPipelineSpecializer>,
+    pub(super) variants: Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<ActorPipelineSpecializer>,
+    >,
     pub(super) bind_group_layout: BindGroupLayoutDescriptor,
     draw_variants: std::collections::HashMap<
         ActorPipelineContract,
@@ -67,7 +70,10 @@ impl FromWorld for ActorPipeline {
             targets: Default::default(),
             session_rasters: (std::sync::Arc::from([]), Vec::new()),
             frame_requests: Default::default(),
-            variants: Variants::new(ActorPipelineSpecializer, descriptor),
+            variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(ActorPipelineSpecializer, world),
+                descriptor,
+            ),
             bind_group_layout,
             draw_variants: Default::default(),
         }

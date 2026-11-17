@@ -35,18 +35,42 @@ struct HandMaterial {
 @group(0) @binding(0) var<uniform> view: HandView;
 @group(0) @binding(1) var<storage, read> instance_words: array<u32>;
 @group(0) @binding(2) var<storage, read> vertex_words: array<u32>;
-@group(0) @binding(3) var<storage, read> geometry_spans: array<GeometrySpan>;
-@group(0) @binding(4) var<storage, read> previous_bones: array<BoneMatrix>;
+@group(0) @binding(3) var<storage, read> geometry_spans: array<vec2<u32>>;
+
+// Raw storage preserves the 8-byte CPU record without a std430 struct block.
+fn load_geometry_spans(index: u32) -> GeometrySpan {
+    let base = index * 1u;
+    return GeometrySpan(geometry_spans[base + 0u].x,
+        geometry_spans[base + 0u].y);
+}
+@group(0) @binding(4) var<storage, read> previous_bones: array<vec4<f32>>;
+
+// Raw storage preserves the 48-byte CPU record without a std430 struct block.
+fn load_previous_bones(index: u32) -> BoneMatrix {
+    let base = index * 3u;
+    return BoneMatrix(vec4<f32>(previous_bones[base + 0u].x, previous_bones[base + 0u].y, previous_bones[base + 0u].z, previous_bones[base + 0u].w),
+        vec4<f32>(previous_bones[base + 1u].x, previous_bones[base + 1u].y, previous_bones[base + 1u].z, previous_bones[base + 1u].w),
+        vec4<f32>(previous_bones[base + 2u].x, previous_bones[base + 2u].y, previous_bones[base + 2u].z, previous_bones[base + 2u].w));
+}
 @if(!COMPACT_BONES)
-@group(0) @binding(5) var<storage, read> current_bones: array<BoneMatrix>;
+@group(0) @binding(5) var<storage, read> current_bones: array<vec4<f32>>;
+
+// Raw storage preserves the 48-byte CPU record without a std430 struct block.
+@if(!COMPACT_BONES)
+fn load_current_bones(index: u32) -> BoneMatrix {
+    let base = index * 3u;
+    return BoneMatrix(vec4<f32>(current_bones[base + 0u].x, current_bones[base + 0u].y, current_bones[base + 0u].z, current_bones[base + 0u].w),
+        vec4<f32>(current_bones[base + 1u].x, current_bones[base + 1u].y, current_bones[base + 1u].z, current_bones[base + 1u].w),
+        vec4<f32>(current_bones[base + 2u].x, current_bones[base + 2u].y, current_bones[base + 2u].z, current_bones[base + 2u].w));
+}
 
 // The compact pose stores equal-sized previous and current endpoint arrays together.
 fn current_bone(index: u32) -> BoneMatrix {
-    @if(!COMPACT_BONES) return current_bones[index];
+    @if(!COMPACT_BONES) return load_current_bones(index);
     @if(COMPACT_BONES) {
-        let count = arrayLength(&previous_bones) / 2u;
+        let count = arrayLength(&previous_bones) / 6u;
         if (index >= count) { var empty: BoneMatrix; return empty; }
-        return previous_bones[count + index];
+        return load_previous_bones(count + index);
     }
 }
 @group(0) @binding(6) var skins: texture_2d_array<f32>;
@@ -140,7 +164,7 @@ fn hand_vertex(
     let geometry_id = instance_words[instance_base + 14u];
     let texture_layer = instance_words[instance_base + 15u];
     let partial_tick = clamp(word_f32(instance_base + 16u), 0.0, 1.0);
-    let span = geometry_spans[geometry_id];
+    let span = load_geometry_spans(geometry_id);
 
     var out: VertexOutput;
     out.skin_layer = texture_layer;
@@ -176,12 +200,12 @@ fn hand_vertex(
         bitcast<f32>(vertex_words[vertex_base + 9u]),
     );
     let bone_index = vertex_words[vertex_base + 10u];
-    let posed = posed_point(previous_bones[previous_bone_base + bone_index], current_bone(current_bone_base + bone_index), local, partial_tick);
+    let posed = posed_point(load_previous_bones(previous_bone_base + bone_index), current_bone(current_bone_base + bone_index), local, partial_tick);
     let placement = BoneMatrix(instance_row(instance_base, 0u), instance_row(instance_base, 1u), instance_row(instance_base, 2u));
     let world = vec4(placed_point(placement, posed), 1.0);
     out.position = view.clip_from_hand * world;
     if (hand_light.java_lights[0].w != 0.0) {
-        let previous_matrix = previous_bones[previous_bone_base + bone_index];
+        let previous_matrix = load_previous_bones(previous_bone_base + bone_index);
         let current_matrix = current_bone(current_bone_base + bone_index);
         let bone = transpose(mat3x3(
             mix(previous_matrix.row_0.xyz, current_matrix.row_0.xyz, partial_tick),
@@ -196,7 +220,7 @@ fn hand_vertex(
         out.shade = java_shade(java_normal(placement * bone, normal, hand_light.java_normal_axes[light_index].xyz));
     } else {
         let normal = vec3(bitcast<f32>(vertex_words[vertex_base + 3u]), bitcast<f32>(vertex_words[vertex_base + 4u]), bitcast<f32>(vertex_words[vertex_base + 5u]));
-        let posed = posed_normal(previous_bones[previous_bone_base + bone_index], current_bone(current_bone_base + bone_index), normal, partial_tick);
+        let posed = posed_normal(load_previous_bones(previous_bone_base + bone_index), current_bone(current_bone_base + bone_index), normal, partial_tick);
         let hand_normal = placed_normal(placement, posed);
         let world_from_hand = BoneMatrix(hand_light.world_from_hand[0], hand_light.world_from_hand[1], hand_light.world_from_hand[2]);
         let world_normal = placed_normal(world_from_hand, hand_normal);

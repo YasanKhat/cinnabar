@@ -394,19 +394,19 @@ fn packed_chunk_shader_parses_and_validates() {
     );
     assert!(shader.contains("fn sample_texture_ref("));
     assert!(shader.contains("texture_page(texture_ref)"));
-    assert!(shader.contains("let uv_dx = dpdx(in.uv);"));
-    assert!(shader.contains("let uv_dy = dpdy(in.uv);"));
+    assert!(shader.contains("let uv_dx = dpdx(in.uv_aux.xy);"));
+    assert!(shader.contains("let uv_dy = dpdy(in.uv_aux.xy);"));
     assert!(shader.contains("if (frame_blend > 0.0)"));
     assert!(shader.contains("mix(current_sample, next_sample, frame_blend)"));
-    assert!(shader.contains("@interpolate(flat) current_texture: u32"));
-    assert!(shader.contains("@interpolate(flat) next_texture: u32"));
-    assert!(shader.contains("@interpolate(flat) frame_blend: f32"));
-    assert!(shader.contains("@interpolate(flat) quad_shape: u32"));
-    assert!(shader.contains("@location(3) @interpolate(flat) material_flags: u32"));
-    assert!(shader.contains("@interpolate(flat) material_flags: u32"));
+    assert!(shader.contains("@interpolate(flat) textures_meta: vec4<u32>"));
+    assert!(shader.contains("@interpolate(flat) biome_meta: vec4<u32>"));
+    assert!(shader.contains("bitcast<f32>(in.biome_meta.y)"));
+    assert!(shader.contains("quad_shape_uv_limit(in.textures_meta.z)"));
+    assert!(shader.contains("@location(1) @interpolate(flat) textures_meta: vec4<u32>"));
+    assert!(shader.contains("in.textures_meta.w"));
     assert_eq!(
         shader
-            .matches("out.material_flags = material.flags;")
+            .matches("out.textures_meta.w = material.flags;")
             .count(),
         1
     );
@@ -424,10 +424,10 @@ fn packed_chunk_shader_parses_and_validates() {
         assets::MATERIAL_FLAG_OVERLAY_MASK
     )));
     assert!(shader.contains("mix(sampled.rgb, tinted, sampled.a)"));
-    assert!(shader.contains("in.biome_record,"));
+    assert!(shader.contains("in.biome_meta.x,"));
     assert!(shader.contains("greedy_uv"));
     assert!(shader.contains("var<storage, read> biome_records: array<u32>"));
-    assert!(shader.contains("var<storage, read> biome_tints: array<BiomeTintGpu>"));
+    assert!(shader.contains("var<storage, read> biome_tints: array<u32>"));
     assert!(shader.contains("local_position - normal * 0.001"));
     assert!(shader.contains("(coordinate.x << 8u) | (coordinate.z << 4u) | coordinate.y"));
     assert!(shader.contains("fn packed_biome_tint_index"));

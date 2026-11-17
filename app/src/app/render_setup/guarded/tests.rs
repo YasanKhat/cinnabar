@@ -147,7 +147,7 @@ fn device_loss_after_presentation_uses_another_api_on_restart() {
             None,
             recovery.failed_backends(),
         ),
-        [Backend::Vulkan]
+        [Backend::Vulkan, Backend::Gl]
     );
 }
 
@@ -262,7 +262,7 @@ fn backend_mask_uses_the_policy_order() {
     );
     assert_eq!(backends(wgpu::Backends::DX12), [Backend::Dx12]);
     assert!(backends(wgpu::Backends::empty()).is_empty());
-    assert!(backends(wgpu::Backends::GL).is_empty());
+    assert_eq!(backends(wgpu::Backends::GL), [Backend::Gl]);
 }
 
 #[test]

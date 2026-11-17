@@ -44,12 +44,48 @@ const JOB_GLINT: u32 = JOB_GLINT_FLAG;
 
 @group(0) @binding(0) var<storage, read> instance_words: array<u32>;
 @group(0) @binding(1) var<storage, read> vertex_words: array<u32>;
-@group(0) @binding(2) var<storage, read> geometry_spans: array<GeometrySpan>;
-@group(0) @binding(3) var<storage, read> previous_bones: array<BoneMatrix>;
-@group(0) @binding(4) var<storage, read> current_bones: array<BoneMatrix>;
+@group(0) @binding(2) var<storage, read> geometry_spans: array<vec2<u32>>;
+
+// Raw storage preserves the 8-byte CPU record without a std430 struct block.
+fn load_geometry_spans(index: u32) -> GeometrySpan {
+    let base = index * 1u;
+    return GeometrySpan(geometry_spans[base + 0u].x,
+        geometry_spans[base + 0u].y);
+}
+@group(0) @binding(3) var<storage, read> previous_bones: array<vec4<f32>>;
+
+// Raw storage preserves the 48-byte CPU record without a std430 struct block.
+fn load_previous_bones(index: u32) -> BoneMatrix {
+    let base = index * 3u;
+    return BoneMatrix(vec4<f32>(previous_bones[base + 0u].x, previous_bones[base + 0u].y, previous_bones[base + 0u].z, previous_bones[base + 0u].w),
+        vec4<f32>(previous_bones[base + 1u].x, previous_bones[base + 1u].y, previous_bones[base + 1u].z, previous_bones[base + 1u].w),
+        vec4<f32>(previous_bones[base + 2u].x, previous_bones[base + 2u].y, previous_bones[base + 2u].z, previous_bones[base + 2u].w));
+}
+@group(0) @binding(4) var<storage, read> current_bones: array<vec4<f32>>;
+
+// Raw storage preserves the 48-byte CPU record without a std430 struct block.
+fn load_current_bones(index: u32) -> BoneMatrix {
+    let base = index * 3u;
+    return BoneMatrix(vec4<f32>(current_bones[base + 0u].x, current_bones[base + 0u].y, current_bones[base + 0u].z, current_bones[base + 0u].w),
+        vec4<f32>(current_bones[base + 1u].x, current_bones[base + 1u].y, current_bones[base + 1u].z, current_bones[base + 1u].w),
+        vec4<f32>(current_bones[base + 2u].x, current_bones[base + 2u].y, current_bones[base + 2u].z, current_bones[base + 2u].w));
+}
 @group(0) @binding(5) var<storage, read> block_entity_words: array<u32>;
 
-@group(1) @binding(0) var<storage, read> jobs: array<SkinJob>;
+@group(1) @binding(0) var<storage, read> jobs: array<vec4<u32>>;
+
+// Raw storage preserves the 32-byte CPU record without a std430 struct block.
+fn load_jobs(index: u32) -> SkinJob {
+    let base = index * 2u;
+    return SkinJob(jobs[base + 0u].x,
+        jobs[base + 0u].y,
+        jobs[base + 0u].z,
+        jobs[base + 0u].w,
+        jobs[base + 1u].x,
+        jobs[base + 1u].y,
+        bitcast<i32>(jobs[base + 1u].z),
+        jobs[base + 1u].w);
+}
 @group(1) @binding(1) var<storage, read_write> vertices: array<u32>;
 @group(1) @binding(2) var<uniform> params: SkinParams;
 
@@ -78,14 +114,14 @@ fn skin_corner(job: SkinJob, vertex: u32) -> Corner {
     let instance_base = job.instance * ACTOR_GPU_INSTANCE_WORDS;
     let previous_bone_base = instance_words[instance_base + 12u];
     let current_bone_base = instance_words[instance_base + 13u];
-    let span = geometry_spans[instance_words[instance_base + 14u]];
+    let span = load_geometry_spans(instance_words[instance_base + 14u]);
     let partial_tick = clamp(word_f32(instance_base + 16u), 0.0, 1.0);
     let base = (span.first_vertex + vertex) * ACTOR_RIG_VERTEX_WORDS;
     let local = vec3(rig_f32(base), rig_f32(base + 1u), rig_f32(base + 2u));
     let local_normal = vec3(rig_f32(base + 3u), rig_f32(base + 4u), rig_f32(base + 5u));
     let bone_index = vertex_words[base + 10u];
-    let previous_bone = previous_bones[previous_bone_base + bone_index];
-    let current_bone = current_bones[current_bone_base + bone_index];
+    let previous_bone = load_previous_bones(previous_bone_base + bone_index);
+    let current_bone = load_current_bones(current_bone_base + bone_index);
     let placement = BoneMatrix(
         instance_row(instance_base, 0u),
         instance_row(instance_base, 1u),
@@ -106,7 +142,7 @@ fn skin_corner(job: SkinJob, vertex: u32) -> Corner {
 // Quad matching needs local positions and texture coordinates without repeating bone skinning.
 fn skin_texture_corner(job: SkinJob, vertex: u32) -> Corner {
     let instance_base = job.instance * ACTOR_GPU_INSTANCE_WORDS;
-    let span = geometry_spans[instance_words[instance_base + 14u]];
+    let span = load_geometry_spans(instance_words[instance_base + 14u]);
     let base = (span.first_vertex + vertex) * ACTOR_RIG_VERTEX_WORDS;
     let uv_offset = vec2(word_f32(instance_base + 20u), word_f32(instance_base + 21u));
     let uv_scale = vec2(word_f32(instance_base + 22u), word_f32(instance_base + 23u));
@@ -217,7 +253,7 @@ fn skin_rig(
     if (job_index >= params.counts.x) {
         return;
     }
-    let job = jobs[params.counts.y + job_index];
+    let job = load_jobs(params.counts.y + job_index);
     let vertex = id.x + (id.z % x_blocks) * groups.x * SKIN_WORKGROUP_SIZE;
     if (vertex >= job.vertex_count) {
         return;

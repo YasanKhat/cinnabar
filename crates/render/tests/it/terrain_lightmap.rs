@@ -254,7 +254,7 @@ const MODEL_VERTEX: &str = r#"
     out.clip_position = vec4(corner * 2.0 - vec2(1.0), 0.5, 1.0);
     out.uv = vec2(0.5);
     out.native_light_levels = terrain_light_levels(witness_sample(corner));
-    out.native_ao_face = 1.0;
+    out.world_ao.w = 1.0;
     out.tint_gamma = vec3(1.0);
     out.visibility = model_visibility(MODEL_VISIBLE | MODEL_TWO_SIDED, vec3(0u));
     return out;
@@ -266,9 +266,9 @@ const CUBE_VERTEX: &str = r#"
     let corner = witness_corner(index);
     var out: VertexOutput;
     out.clip_position = vec4(corner * 2.0 - vec2(1.0), 0.5, 1.0);
-    out.uv = vec2(0.5);
-    out.native_light_levels = terrain_light_levels(witness_sample(corner));
-    out.native_ao_face = 1.0;
+    out.uv_aux = vec4(vec2(0.5), out.uv_aux.zw);
+    out.uv_aux = vec4(out.uv_aux.xy, terrain_light_levels(witness_sample(corner)));
+    out.local_ao.w = 1.0;
     return out;
 }
 "#;

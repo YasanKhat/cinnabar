@@ -99,7 +99,7 @@ fn complete_worker(
         None,
     )
     .unwrap();
-    let (prepared, stats) = build_chunk_texture_assets(candidate, &device, &queue).unwrap();
+    let (prepared, stats) = build_chunk_texture_assets(candidate, &device, &queue, true).unwrap();
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     let request = app
         .world()

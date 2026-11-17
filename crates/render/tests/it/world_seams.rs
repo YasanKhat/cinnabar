@@ -538,7 +538,7 @@ fn sectioned_model_vertex(index: u32) -> VertexOutput {
 /// Projects the same model geometry through the former absolute-coordinate control.
 @vertex fn absolute_model_vertex(@builtin(vertex_index) index: u32) -> VertexOutput {
     var out = sectioned_model_vertex(index);
-    out.clip_position = view.clip_from_world * vec4(out.world_position, 1.0);
+    out.clip_position = view.clip_from_world * vec4(out.world_ao.xyz, 1.0);
     return out;
 }
 "#;

@@ -156,7 +156,7 @@ crash-monitor = { path = "../crates/crash-monitor" }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { workspace = true, features = ["webgpu"] }
 
-[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+[target.'cfg(any(windows, target_os = "linux", target_os = "android"))'.dependencies]
 wgpu = { workspace = true, features = ["gles"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

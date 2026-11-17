@@ -10,7 +10,16 @@ pub(super) struct UiViewportUniform {
     pub(super) glint_strength: f32,
 }
 
-pub(crate) fn source(raw: &str) -> String {
+/// Builds pure WGSL for the selected device's UI filtering path.
+pub(crate) fn source(raw: &str, software_bilinear: bool) -> String {
+    let raw = raw.replace(
+        "UI_BILINEAR_BODY",
+        if software_bilinear {
+            SOFTWARE_BILINEAR
+        } else {
+            "return textureSampleLevel(ui_pages, ui_linear_sampler, uv, page, 0.0);"
+        },
+    );
     // Keep the GPU style bits owned by the renderer, with no UI-crate dependency or WGSL copy.
     let raw = raw.replace("UI_REPEAT_DECODER", render_api::ui_repeat::WGSL_DECODER);
     let raw = raw.replace("UI_SHADOW_DECODER", render_api::ui_shadow::WGSL);
@@ -157,6 +166,19 @@ pub(crate) fn source(raw: &str) -> String {
     })
 }
 
-pub(super) fn from_wgsl(raw: &str, path: impl Into<String>) -> Shader {
-    crate::shader_safety::from_wgsl(source(raw), path)
+pub(super) fn from_wgsl(raw: &str, software_bilinear: bool, path: impl Into<String>) -> Shader {
+    crate::shader_safety::from_wgsl(source(raw, software_bilinear), path)
 }
+
+const SOFTWARE_BILINEAR: &str = r#"
+    let size = vec2<i32>(textureDimensions(ui_pages, 0));
+    let point = uv * vec2<f32>(size) - vec2(0.5);
+    let base = vec2<i32>(floor(point));
+    let weight = fract(point);
+    let hi = size - vec2(1);
+    let a = textureLoad(ui_pages, clamp(base, vec2(0), hi), page, 0);
+    let b = textureLoad(ui_pages, clamp(base + vec2(1, 0), vec2(0), hi), page, 0);
+    let c = textureLoad(ui_pages, clamp(base + vec2(0, 1), vec2(0), hi), page, 0);
+    let d = textureLoad(ui_pages, clamp(base + vec2(1, 1), vec2(0), hi), page, 0);
+    return mix(mix(a, b, weight.x), mix(c, d, weight.x), weight.y);
+"#;

@@ -106,7 +106,7 @@ exclude = ["crates/protocol/vendor/bedrock-protocol-1-26-60"]
 resolver = "3"
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.3"
 edition = "2024"
 rust-version = "1.99.0"
 
@@ -145,8 +145,8 @@ bevy = { version = "=0.20.0", default-features = false, features = [
 wgpu = { version = "30.0.1", default-features = false, features = ["noop", "std", "wgsl"] }
 # Every crate that names naga uses this one feature set, so `-p cinnabar` and `--workspace`
 # builds agree on naga and nothing above it (wgpu, bevy_render) builds twice. `glsl-in` is the
-# Java shader-pack frontend; it adds only naga's GLSL parser and pp-rs.
-naga = { version = "30.0.1", features = ["glsl-in", "wgsl-in"] }
+# Java shader-pack frontend; `glsl-out` also keeps desktop GL regression tests on this set.
+naga = { version = "30.0.1", features = ["glsl-in", "wgsl-in", "glsl-out"] }
 # The pack loader uses preserved text and Iris recovery. Naga keeps its released token API.
 pp-rs = { git = "https://github.com/cinnabar-mc/glslpp-rs", rev = "949f1178cd660d3bcd1ec70181a10cf70e4b95b6" }
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "tga"] }

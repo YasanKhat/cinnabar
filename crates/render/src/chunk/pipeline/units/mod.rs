@@ -207,7 +207,8 @@ fn configure_support(
         Backends::from(info.backend),
         direct_draws_required(&info),
     );
-    pipeline.unit_supported = supported(mode, &device.limits());
+    pipeline.unit_supported =
+        !super::layouts::uses_compact_terrain(&device) && supported(mode, &device.limits());
 }
 
 /// A single additional vertex storage binding, with no vertex buffer or indirect arguments.

@@ -32,6 +32,22 @@ struct SkyboxUniform { parameters: vec4<f32> }
 
 // Intersect a camera-relative ray with the translated cube. Removing the
 // translation changes its projection, including the top/bottom face boundaries.
+fn sky_ring(index: u32) -> vec2<f32> {
+    switch index {
+        case 0u: { return vec2(1.0, 0.0); }
+        case 1u: { return vec2(0.809017003, 0.587785244); }
+        case 2u: { return vec2(0.309016973, 0.951056540); }
+        case 3u: { return vec2(-0.309017152, 0.951056480); }
+        case 4u: { return vec2(-0.809017062, 0.587785184); }
+        case 5u: { return vec2(-1.0, -0.0000000874227766); }
+        case 6u: { return vec2(-0.809016764, -0.587785542); }
+        case 7u: { return vec2(-0.309017092, -0.951056480); }
+        case 8u: { return vec2(0.309017122, -0.951056480); }
+        case 9u: { return vec2(0.809016943, -0.587785304); }
+        default: { return vec2(0.0); }
+    }
+}
+
 fn pack_skybox_exit(ray: vec3<f32>, offset: f32) -> vec3<f32> {
     return (vec3(1.0) + vec3(0.0, offset, 0.0) * sign(ray)) / max(abs(ray), vec3(0.000001));
 }
@@ -124,18 +140,7 @@ fn view_ray(position: vec2<f32>) -> vec3<f32> {
     return normalize((view.world_from_view * vec4(view_direction, 0.0)).xyz);
 }
 
-const SKY_RING = array<vec2<f32>, 10>(
-    vec2(1.0, 0.0),
-    vec2(0.809017003, 0.587785244),
-    vec2(0.309016973, 0.951056540),
-    vec2(-0.309017152, 0.951056480),
-    vec2(-0.809017062, 0.587785184),
-    vec2(-1.0, -0.0000000874227766),
-    vec2(-0.809016764, -0.587785542),
-    vec2(-0.309017092, -0.951056480),
-    vec2(0.309017122, -0.951056480),
-    vec2(0.809016943, -0.587785304),
-);
+
 
 // Returns the oriented area used for angular ordering and fan barycentrics.
 fn sky_cross(a: vec2<f32>, b: vec2<f32>) -> f32 {
@@ -148,13 +153,13 @@ fn sky_sector(point: vec2<f32>) -> u32 {
     var upper = 5u;
     if (point.y < 0.0) {
         // The fifth stored rim point is slightly below the negative X axis.
-        if (point.x < 0.0 && sky_cross(SKY_RING[5], point) < 0.0) { return 4u; }
+        if (point.x < 0.0 && sky_cross(sky_ring(5), point) < 0.0) { return 4u; }
         lower = 5u;
         upper = 10u;
     }
     while (upper - lower > 1u) {
         let middle = (lower + upper) / 2u;
-        if (sky_cross(SKY_RING[middle], point) >= 0.0) { lower = middle; }
+        if (sky_cross(sky_ring(middle), point) >= 0.0) { lower = middle; }
         else { upper = middle; }
     }
     return lower;
@@ -165,8 +170,8 @@ fn native_sky_fog_weight(ray: vec3<f32>) -> f32 {
     if (ray.y <= 0.0) { return 1.0; }
     let point = ray.xz * (256.0 / 2000.0) / ray.y;
     let index = sky_sector(point);
-    let a = SKY_RING[index];
-    let b = SKY_RING[(index + 1u) % 10u];
+    let a = sky_ring(index);
+    let b = sky_ring((index + 1u) % 10u);
     let determinant = sky_cross(a, b);
     let alpha = sky_cross(point, b) / determinant;
     let beta = sky_cross(a, point) / determinant;

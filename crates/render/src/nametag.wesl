@@ -14,7 +14,21 @@ struct Record {
 }
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(0) @binding(1) var<storage, read> records: array<Record>;
+@group(0) @binding(1) var<storage, read> records: array<vec4<u32>>;
+
+// Raw storage preserves the 80-byte CPU record without a std430 struct block.
+fn load_records(index: u32) -> Record {
+    let base = index * 5u;
+    return Record(vec3<f32>(bitcast<f32>(records[base + 0u].x), bitcast<f32>(records[base + 0u].y), bitcast<f32>(records[base + 0u].z)),
+        records[base + 0u].w,
+        vec4<f32>(bitcast<f32>(records[base + 1u].x), bitcast<f32>(records[base + 1u].y), bitcast<f32>(records[base + 1u].z), bitcast<f32>(records[base + 1u].w)),
+        vec4<f32>(bitcast<f32>(records[base + 2u].x), bitcast<f32>(records[base + 2u].y), bitcast<f32>(records[base + 2u].z), bitcast<f32>(records[base + 2u].w)),
+        vec4<f32>(bitcast<f32>(records[base + 3u].x), bitcast<f32>(records[base + 3u].y), bitcast<f32>(records[base + 3u].z), bitcast<f32>(records[base + 3u].w)),
+        bitcast<f32>(records[base + 4u].x),
+        records[base + 4u].y,
+        records[base + 4u].z,
+        records[base + 4u].w);
+}
 @group(0) @binding(2) var atlas: texture_2d<f32>;
 @group(0) @binding(3) var atlas_sampler: sampler;
 
@@ -42,7 +56,7 @@ fn corner(index: u32) -> vec2<f32> {
 
 @vertex
 fn nametag_vertex(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-    let record = records[vertex_index / 6u];
+    let record = load_records(vertex_index / 6u);
     let at = corner(vertex_index % 6u);
     // Every tag shares the camera rotation, including at the edges of the view.
     let right = normalize(view.world_from_view[0].xyz);

@@ -1,3 +1,5 @@
+import render::model_fragment::FragmentInput;
+
 import render::chunk_bindings::{
     view, chunk_origins, block_textures_page_0, block_textures_page_1, block_textures_page_2,
     block_textures_page_3, block_textures_page_4, block_sampler, terrain_gamma_page_0,
@@ -10,7 +12,7 @@ import render::material::{MaterialGpu, materials, positional_material_id, textur
 import render::enhanced::caster::caster_clip;
 import render::world_projection::{section_camera_offset, camera_offset_clip};
 import render::biome_tint::{blended_biome_tint, blended_biome_tint_gamma};
-import render::lighting::{light_ao_factor, light_colour, material_ambient_occlusion, material_face_shade, point_lit_terrain_light_colour, tint_to_gamma, tint_to_linear, terrain_light_levels};
+import render::lighting::{light_ao_factor, light_colour, material_ambient_occlusion, material_face_shade, point_lit_terrain_light_colour, tint_to_gamma, tint_to_linear, terrain_sample_gamma, terrain_light_levels};
 @if(ALPHA_TO_COVERAGE)
 import render::lighting::{CutoutSample, cutout_alpha_array, cutout_mix};
 @if(ENHANCED)
@@ -22,51 +24,49 @@ const MODEL_ALPHA_THRESHOLD: f32 = 0.5;
 
 struct VertexOutput {
     @builtin(position) @invariant clip_position: vec4<f32>,
-    // Partially covered MSAA pixels must sample inside the authored quad.
     @location(0) @interpolate(perspective, centroid) uv: vec2<f32>,
-    // Current and next animation frames share one flat slot.
-    @location(1) @interpolate(flat) textures: vec2<u32>,
-    @location(2) normal: vec3<f32>,
-    @location(3) @interpolate(flat) material_flags: u32,
-    @location(4) @interpolate(flat) local_position: vec3<f32>,
-    @location(5) @interpolate(flat) biome_record: u32,
-    @location(7) @interpolate(flat) frame_blend: f32,
-    // x: visibility and sidedness flags; y: the exact f32 bits of the Cinnabar mask strength;
-    // zw: inverted Cinnabar glow and emissive mask references (zero names none).
-    @location(8) @interpolate(flat) visibility: vec4<u32>,
-    @location(9) lighting: vec3<f32>,
-    @if(ENHANCED)
-    @location(11) sky_light: f32,
-    @if(ENHANCED)
-    @location(6) ambient_occlusion: f32,
+    @location(1) @interpolate(flat) textures_meta: vec4<u32>,
+    @location(2) @interpolate(flat) visibility: vec4<u32>,
+    @location(3) world_ao: vec4<f32>,
     @if(!ENHANCED)
-    @location(11) native_light_levels: vec2<f32>,
+    @location(4) native_light_levels: vec2<f32>,
     @if(!ENHANCED)
-    @location(6) native_ao_face: f32,
-    @location(10) @interpolate(flat) world_origin: vec3<f32>,
-    @location(12) world_position: vec3<f32>,
+    @location(5) @interpolate(flat) tint_gamma: vec3<f32>,
     @if(ENHANCED)
-    @location(13) @interpolate(flat) surface_class: u32,
-    @if(!ENHANCED)
-    @location(13) @interpolate(flat) tint_gamma: vec3<f32>,
+    @location(4) normal_sky: vec4<f32>,
+    @if(ENHANCED)
+    @location(5) @interpolate(flat) local_position: vec3<f32>,
+    @if(ENHANCED)
+    @location(6) @interpolate(flat) biome_surface: vec2<u32>,
+    @if(ENHANCED)
+    @location(7) lighting: vec3<f32>,
+    @if(ENHANCED)
+    @location(8) @interpolate(flat) world_origin: vec3<f32>,
 }
 
 struct FrameSample { current: u32, next: u32, blend: f32 }
-// Visibility also carries the admitted tile policy without another interpolator.
 const MODEL_VISIBLE: u32 = 1u;
 const MODEL_BOUNDED_TILE: u32 = 2u;
-// Every UV stays inside one tile, so cutout coverage must not borrow texels across its edges.
 const MODEL_UNIT_TILE: u32 = 4u;
-// Back faces draw too.
 const MODEL_TWO_SIDED: u32 = 8u;
 
-/// The flat visibility varying: `flags` in x and a material's mask varyings
-/// (`material_mask_varyings`) in yzw, keeping the strength's full f32 bits as cube faces do.
+fn model_normal_for_face(index: u32) -> vec3<f32> {
+    switch index {
+        case 0u: { return vec3(0.0); }
+        case 1u: { return vec3(0.0,-1.0,0.0); }
+        case 2u: { return vec3(0.0,1.0,0.0); }
+        case 3u: { return vec3(-1.0,0.0,0.0); }
+        case 4u: { return vec3(1.0,0.0,0.0); }
+        case 5u: { return vec3(0.0,0.0,-1.0); }
+        case 6u: { return vec3(0.0,0.0,1.0); }
+        default: { return vec3(0.0); }
+    }
+}
+
 fn model_visibility(flags: u32, masks: vec3<u32>) -> vec4<u32> {
     return vec4(flags, masks.z, masks.x, masks.y);
 }
 
-/// The Cinnabar mask strength `model_visibility` carries.
 fn model_mask_strength(visibility: vec4<u32>) -> f32 {
     return bitcast<f32>(visibility.y);
 }
@@ -74,31 +74,8 @@ fn model_mask_strength(visibility: vec4<u32>) -> f32 {
 fn invisible_vertex() -> VertexOutput {
     var invisible: VertexOutput;
     invisible.clip_position = vec4(2.0, 2.0, 2.0, 1.0);
-    invisible.uv = vec2(0.0);
-    invisible.textures.x = 0u;
-    invisible.normal = vec3(0.0);
-    invisible.material_flags = 0u;
-    invisible.local_position = vec3(0.0);
-    invisible.biome_record = 0u;
-    invisible.textures.y = 0u;
-    invisible.frame_blend = 0.0;
-    invisible.visibility.x = 0u;
-    invisible.lighting = vec3(0.0);
-    @if(ENHANCED)
-    invisible.sky_light = 0.0;
-    @if(ENHANCED)
-    invisible.ambient_occlusion = 0.0;
-    @if(ENHANCED)
-    invisible.surface_class = 0u;
-    @if(!ENHANCED)
-    invisible.native_light_levels = vec2(0.0);
-    @if(!ENHANCED)
-    invisible.native_ao_face = 0.0;
     @if(!ENHANCED)
     invisible.tint_gamma = vec3(1.0);
-    invisible.visibility.y = 0u;
-    invisible.world_origin = vec3(0.0);
-    invisible.world_position = vec3(0.0);
     return invisible;
 }
 
@@ -145,9 +122,6 @@ fn rotate_cross(position: vec3<f32>, transform: u32) -> vec3<f32> {
     return rotated + vec3(0.5, 0.0, 0.5);
 }
 
-/// Turns a template-space position by a model turn: its quarter turns about x (bits 2-3), each
-/// taking +y to +z about the block centre, then its quarter turns about y (bits 0-1) as
-/// `rotate_cross` makes them. Overlays turn to their face this way.
 fn rotate_model_turn(position: vec3<f32>, turn: u32) -> vec3<f32> {
     var turned = position;
     for (var x_turn = 0u; x_turn < ((turn >> 2u) & 3u); x_turn += 1u) {
@@ -156,14 +130,12 @@ fn rotate_model_turn(position: vec3<f32>, turn: u32) -> vec3<f32> {
     return rotate_cross(turned, turn);
 }
 
-// Current lily-pad tessellator: unsigned wrapping position hash.
 fn lily_pad_rotation(position: vec3<i32>) -> u32 {
     let h = (bitcast<u32>(position.z) * 0x6ebfff5u) ^
         (bitcast<u32>(position.x) * 0x2fc20fu) ^ bitcast<u32>(position.y);
     return (((h * 0x285b825u + 11u) * h) >> 16u) & 3u;
 }
 
-// Consecutive units share an instance; reject padding before fetching a descriptor or geometry.
 @if(TERRAIN_UNITS)
 @group(2) @binding(0) var<storage, read> terrain_units: array<vec4<u32>>;
 
@@ -173,7 +145,6 @@ fn vertex_unit(
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32,
 ) -> VertexOutput {
-    // Header locates packed visibility references beside stable descriptor slots.
     let unit_index = instance_index * TERRAIN_UNITS_PER_INSTANCE
         + vertex_index / (TERRAIN_UNIT_QUADS * 4u);
     if (unit_index >= terrain_units[0].y) {
@@ -193,7 +164,6 @@ fn vertex_unit(
     return model_vertex(unit.z * 4u + vertex_index % 4u, unit.x + quad);
 }
 
-// Fetches the vertex index and first instance from vertex buffer 0, as `chunk.wesl` describes.
 @vertex
 fn vertex(
     @location(0) offsets: vec2<u32>,
@@ -202,28 +172,19 @@ fn vertex(
     return model_vertex(offsets.x, offsets.y + instance_index);
 }
 
-/// One quad of a placed model, decoded as every model program reads it. Its flags are 0 or 1
-/// in `u32`s: older Mali compilers fault on bool struct members merged across returns.
 struct ModelQuad {
-    /// Zero when the draw ref, model ref, template or lighting record is out of range, or
-    /// the quad is hidden by its ref's visibility mask; no other field is meaningful then.
     valid: u32,
     template_quad_base: u32,
     quad_index: u32,
     surface_patch: u32,
     packed_transform: u32,
     lighting_base_index: u32,
-    /// Placed block corner, relative to the section origin.
     block_position: vec3<f32>,
-    /// Quarter turns about the block's vertical centre line, after bamboo and lily-pad rules.
     rotation: u32,
     is_lily_pad: u32,
     is_bamboo: u32,
-    /// Bamboo's packed placement offset, added to template corners before `rotation`.
     template_offset: vec3<f32>,
-    /// Bamboo leaf plane inset, added after `template_offset` and before `rotation`.
     leaf_inset: vec3<f32>,
-    /// Random placement offset, added after `rotation`.
     placement_offset: vec3<f32>,
     material_id: u32,
     quad_flags: u32,
@@ -368,14 +329,22 @@ fn surface_axes(quad: ModelQuad, position: vec3<f32>) -> vec2<f32> {
 }
 
 /// Cropped position of an original corner within the block face.
+fn patch_edge(index: u32, border: f32) -> f32 {
+    switch index {
+        case 0u: { return 0.0; }
+        case 1u: { return border; }
+        case 2u: { return 1.0 - border; }
+        default: { return 1.0; }
+    }
+}
+
 fn patch_coordinate(quad: ModelQuad, corner: u32) -> vec2<f32> {
     let tile = quad.surface_patch & SURFACE_TILE_MASK;
     let border = f32(quad.surface_patch >> SURFACE_BORDER_REL_SHIFT) / 256.0;
-    let edges = array(0.0, border, 1.0 - border, 1.0);
     let cell = vec2<u32>(tile % 3u, tile / 3u);
     let original = surface_axes(quad, raw_model_position(quad, corner));
-    return mix(vec2(edges[cell.x], edges[cell.y]),
-        vec2(edges[cell.x + 1u], edges[cell.y + 1u]), original);
+    return mix(vec2(patch_edge(cell.x, border), patch_edge(cell.y, border)),
+        vec2(patch_edge(cell.x + 1u, border), patch_edge(cell.y + 1u, border)), original);
 }
 
 /// Bilinear weights preserve the pack's UV mapping when a face is cropped.
@@ -454,8 +423,8 @@ fn model_light_sample(quad: ModelQuad, corner: u32) -> u32 {
 
 /// Unit normal of a model-carrier face id; zero for faceless quads.
 fn model_face_normal(face: u32) -> vec3<f32> {
-    let normals = array(vec3(0.0), vec3(0.0,-1.0,0.0), vec3(0.0,1.0,0.0), vec3(-1.0,0.0,0.0), vec3(1.0,0.0,0.0), vec3(0.0,0.0,-1.0), vec3(0.0,0.0,1.0));
-    return normals[face & 7u];
+
+    return model_normal_for_face(face & 7u);
 }
 
 /// The quad's authored shading normal, turned with the model.
@@ -494,13 +463,17 @@ fn model_vertex(vertex_index: u32, instance_index: u32) -> VertexOutput {
     @if(ENHANCED_SHADOW)
     out.clip_position = caster_clip(world, material_id, clamp(template_position.y, 0.0, 1.0));
     out.uv = model_corner_uv(quad, material, corner);
-    out.textures.x = frame.current;
-    out.normal = model_quad_normal(quad);
-    out.material_flags = material.flags;
+    out.textures_meta.x = frame.current;
+    let normal = model_quad_normal(quad);
+    @if(ENHANCED)
+    out.normal_sky = vec4(normal, out.normal_sky.w);
+    out.textures_meta.z = material.flags;
+    @if(ENHANCED)
     out.local_position = block_position;
-    out.biome_record = u32(quad.chunk_origin.w);
-    out.textures.y = frame.next;
-    out.frame_blend = frame.blend;
+    @if(ENHANCED)
+    out.biome_surface.x = u32(quad.chunk_origin.w);
+    out.textures_meta.y = frame.next;
+    out.textures_meta.w = bitcast<u32>(frame.blend);
     @if(!ENHANCED)
     let masks = material_mask_varyings(material);
     @if(ENHANCED)
@@ -514,50 +487,54 @@ fn model_vertex(vertex_index: u32, instance_index: u32) -> VertexOutput {
     );
     // Vanilla uses white top vertices and RGB 0x0f on the reverse
     // plane. Apply it after sampling, without another 8-bit atlas quantization.
-    let pad_shade = select(1.0, 15.0 / 255.0, out.normal.y < 0.0);
+    let pad_shade = select(1.0, 15.0 / 255.0, normal.y < 0.0);
     let ao = material_ambient_occlusion(light_ao_factor((light_sample >> 8u) & 7u), material.flags);
-    let dimming = material_face_shade(model_shade_normal(out.normal, light_sample), (light_sample & 2048u) != 0u, material.flags);
+    let dimming = material_face_shade(model_shade_normal(normal, light_sample), (light_sample & 2048u) != 0u, material.flags);
     let terrain_shade = select(material_ao_shade(ao * dimming, material.ao_exponent), pad_shade, is_lily_pad);
+    @if(ENHANCED)
     out.lighting = light_colour(light_sample) * terrain_shade;
     @if(ENHANCED)
-    out.sky_light = sky_illumination(light_sample);
+    out.normal_sky.w = sky_illumination(light_sample);
     @if(ENHANCED)
-    out.ambient_occlusion = ao;
+    out.world_ao.w = ao;
     @if(!ENHANCED)
     out.native_light_levels = terrain_light_levels(light_sample);
     @if(!ENHANCED)
-    out.native_ao_face = terrain_shade;
+    out.world_ao.w = terrain_shade;
     // Crop the decoded attributes at the same coordinates as geometry and UVs.
     // Keeping these as floats avoids repeating or quantizing a whole-face gradient.
     if (quad.surface_patch != 0u) {
         let point = patch_coordinate(quad, corner);
+        @if(ENHANCED)
         out.lighting = vec3(0.0);
         @if(ENHANCED)
-        out.sky_light = 0.0;
+        out.normal_sky.w = 0.0;
         @if(ENHANCED)
-        out.ambient_occlusion = 0.0;
+        out.world_ao.w = 0.0;
         @if(!ENHANCED)
         out.native_light_levels = vec2(0.0);
         @if(!ENHANCED)
-        out.native_ao_face = 0.0;
+        out.world_ao.w = 0.0;
         for (var source = 0u; source < 4u; source += 1u) {
             let weight = patch_weight(quad, source, point);
             let sample = model_light_sample(quad, source);
             let source_ao = material_ambient_occlusion(light_ao_factor((sample >> 8u) & 7u), material.flags);
-            let source_dimming = material_face_shade(model_shade_normal(out.normal, sample), (sample & 2048u) != 0u, material.flags);
+            let source_dimming = material_face_shade(model_shade_normal(normal, sample), (sample & 2048u) != 0u, material.flags);
             let source_shade = material_ao_shade(source_ao * source_dimming, material.ao_exponent);
+            @if(ENHANCED)
             out.lighting += weight * light_colour(sample) * source_shade;
             @if(ENHANCED)
-            out.sky_light += weight * sky_illumination(sample);
+            out.normal_sky.w += weight * sky_illumination(sample);
             @if(ENHANCED)
-            out.ambient_occlusion += weight * source_ao;
+            out.world_ao.w += weight * source_ao;
             @if(!ENHANCED)
             out.native_light_levels += weight * terrain_light_levels(sample);
             @if(!ENHANCED)
-            out.native_ao_face += weight * source_shade;
+            out.world_ao.w += weight * source_shade;
         }
     }
-    out.world_position = world;
+    out.world_ao = vec4(world, out.world_ao.w);
+    @if(ENHANCED)
     out.world_origin = vec3<f32>(quad.chunk_origin.xyz);
     @if(!ENHANCED)
     out.tint_gamma = stem_colour(material.flags);
@@ -566,20 +543,20 @@ fn model_vertex(vertex_index: u32, instance_index: u32) -> VertexOutput {
     let tint_kind = material.flags & 0x30u;
     @if(!ENHANCED && !ENHANCED_SHADOW && !OPAQUE_OVERDRAW)
     if (tint_kind != 0u) {
-        out.tint_gamma = blended_biome_tint_gamma(tint_kind, material.flags, out.biome_record, block_position, out.world_origin).rgb;
+        out.tint_gamma = blended_biome_tint_gamma(tint_kind, material.flags, u32(quad.chunk_origin.w), block_position, vec3<f32>(quad.chunk_origin.xyz)).rgb;
     }
     @if(ENHANCED)
-    out.surface_class = material_class(material_id);
+    out.biome_surface.y = material_class(material_id);
     @if(ENHANCED)
-    out.world_position = waved_position(world, out.surface_class, clamp(template_position.y, 0.0, 1.0));
+    out.world_ao = vec4(waved_position(world, out.biome_surface.y, clamp(template_position.y, 0.0, 1.0)), out.world_ao.w);
     @if(ENHANCED)
     out.clip_position = camera_offset_clip(
         view.clip_from_world,
         view.world_position,
-        camera_offset + (out.world_position - world),
+        camera_offset + (out.world_ao.xyz - world),
     );
     @if(ENHANCED)
-    out.normal = template_quad_normal(quad.template_quad_base, rotation);
+    out.normal_sky = vec4(template_quad_normal(quad.template_quad_base, rotation), out.normal_sky.w);
     return out;
 }
 
@@ -627,114 +604,133 @@ fn tinted(sampled: vec4<f32>, flags: u32, record: u32, position: vec3<f32>, worl
     return vec4(tinted, sampled.a);
 }
 
-fn sample_ref(texture_ref: u32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
-    let layer = texture_layer(texture_ref);
-    let page = texture_page(texture_ref);
-    @if(ENHANCED)
-    if (page == 0u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_0, 0));
-        return textureSampleGrad(block_textures_page_0, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    }
-    @if(ENHANCED)
-    if (page == 1u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_1, 0));
-        return textureSampleGrad(block_textures_page_1, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    }
-    @if(ENHANCED)
-    if (page == 2u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_2, 0));
-        return textureSampleGrad(block_textures_page_2, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    }
-    @if(ENHANCED)
-    if (page == 3u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_3, 0));
-        return textureSampleGrad(block_textures_page_3, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    }
-    @if(ENHANCED)
-    let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_4, 0));
-    @if(ENHANCED)
-    return textureSampleGrad(block_textures_page_4, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    @if(!ENHANCED)
-    if (page == 0u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_0, 0));
-        return textureSampleGrad(terrain_gamma_page_0, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 1u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_1, 0));
-        return textureSampleGrad(terrain_gamma_page_1, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 2u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_2, 0));
-        return textureSampleGrad(terrain_gamma_page_2, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 3u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_3, 0));
-        return textureSampleGrad(terrain_gamma_page_3, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
-    }
-    @if(!ENHANCED)
-    let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_4, 0));
-    @if(!ENHANCED)
-    return textureSampleGrad(terrain_gamma_page_4, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+// GLES shares the repeating block sampler, so bounded model quads clamp in coordinates.
+@if(ENHANCED && SINGLE_SAMPLER)
+fn sample_clamped_ref(image: texture_2d_array<f32>, texture_ref: u32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+    let half_texel = vec2(0.5) / vec2<f32>(textureDimensions(image, 0));
+    let coordinate = clamp(texture_model_uv(texture_ref, uv), half_texel, vec2(1.0) - half_texel);
+    let scale = texture_gradient_scale(texture_ref, textureDimensions(image, 0));
+    return textureSampleGrad(image, block_sampler, coordinate, texture_layer(texture_ref), dx * scale, dy * scale);
 }
 
-// Bamboo's atlas rectangle includes replicated border texels. Other model UVs retain their addressing.
-fn sample_model_ref(in: VertexOutput, texture_ref: u32, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+fn sample_ref(texture_ref: u32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+    let page = texture_page(texture_ref);
+    let layer = texture_layer(texture_ref);
+    @if(ENHANCED && SINGLE_SAMPLER) {
+        if (page == 0u) { return sample_clamped_ref(block_textures_page_0, texture_ref, uv, dx, dy); }
+        if (page == 1u) { return sample_clamped_ref(block_textures_page_1, texture_ref, uv, dx, dy); }
+        if (page == 2u) { return sample_clamped_ref(block_textures_page_2, texture_ref, uv, dx, dy); }
+        if (page == 3u) { return sample_clamped_ref(block_textures_page_3, texture_ref, uv, dx, dy); }
+        return sample_clamped_ref(block_textures_page_4, texture_ref, uv, dx, dy);
+    }
+    @if(ENHANCED && !SINGLE_SAMPLER) {
+        if (page == 0u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_0, 0));
+            return textureSampleGrad(block_textures_page_0, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 1u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_1, 0));
+            return textureSampleGrad(block_textures_page_1, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 2u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_2, 0));
+            return textureSampleGrad(block_textures_page_2, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 3u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_3, 0));
+            return textureSampleGrad(block_textures_page_3, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+        }
+        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_4, 0));
+        return textureSampleGrad(block_textures_page_4, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+    }
+    @if(!ENHANCED && SINGLE_SAMPLER) {
+        if (page == 0u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_0, 0));
+            return tint_to_gamma(textureSampleGrad(block_textures_page_0, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale));
+        }
+        if (page == 1u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_1, 0));
+            return tint_to_gamma(textureSampleGrad(block_textures_page_1, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale));
+        }
+        if (page == 2u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_2, 0));
+            return tint_to_gamma(textureSampleGrad(block_textures_page_2, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale));
+        }
+        if (page == 3u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_3, 0));
+            return tint_to_gamma(textureSampleGrad(block_textures_page_3, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale));
+        }
+        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_4, 0));
+        return tint_to_gamma(textureSampleGrad(block_textures_page_4, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale));
+    }
+    @if(!ENHANCED && !SINGLE_SAMPLER) {
+        if (page == 0u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_0, 0));
+            return textureSampleGrad(terrain_gamma_page_0, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 1u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_1, 0));
+            return textureSampleGrad(terrain_gamma_page_1, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 2u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_2, 0));
+            return textureSampleGrad(terrain_gamma_page_2, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 3u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_3, 0));
+            return textureSampleGrad(terrain_gamma_page_3, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+        }
+        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_4, 0));
+        return textureSampleGrad(terrain_gamma_page_4, model_sampler, texture_model_uv(texture_ref, uv), layer, dx * scale, dy * scale);
+    }
+}
+
+fn sample_model_ref(in: FragmentInput, texture_ref: u32, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
     if ((in.visibility.x & MODEL_BOUNDED_TILE) != 0u) {
         return sample_ref(texture_ref, in.uv, dx, dy);
     }
-    let layer = texture_layer(texture_ref);
     let page = texture_page(texture_ref);
-    @if(ENHANCED)
-    if (page == 0u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_0, 0));
-        return textureSampleGrad(block_textures_page_0, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
+    let layer = texture_layer(texture_ref);
+    @if(ENHANCED) {
+        if (page == 0u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_0, 0));
+            return textureSampleGrad(block_textures_page_0, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 1u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_1, 0));
+            return textureSampleGrad(block_textures_page_1, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 2u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_2, 0));
+            return textureSampleGrad(block_textures_page_2, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
+        }
+        if (page == 3u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_3, 0));
+            return textureSampleGrad(block_textures_page_3, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
+        }
+        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_4, 0));
+        return textureSampleGrad(block_textures_page_4, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
     }
-    @if(ENHANCED)
-    if (page == 1u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_1, 0));
-        return textureSampleGrad(block_textures_page_1, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
+    @if(!ENHANCED) {
+        if (page == 0u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_0, 0));
+            return terrain_sample_gamma(textureSampleGrad(terrain_gamma_page_0, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale));
+        }
+        if (page == 1u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_1, 0));
+            return terrain_sample_gamma(textureSampleGrad(terrain_gamma_page_1, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale));
+        }
+        if (page == 2u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_2, 0));
+            return terrain_sample_gamma(textureSampleGrad(terrain_gamma_page_2, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale));
+        }
+        if (page == 3u) {
+            let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_3, 0));
+            return terrain_sample_gamma(textureSampleGrad(terrain_gamma_page_3, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale));
+        }
+        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_4, 0));
+        return terrain_sample_gamma(textureSampleGrad(terrain_gamma_page_4, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale));
     }
-    @if(ENHANCED)
-    if (page == 2u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_2, 0));
-        return textureSampleGrad(block_textures_page_2, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
-    }
-    @if(ENHANCED)
-    if (page == 3u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_3, 0));
-        return textureSampleGrad(block_textures_page_3, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
-    }
-    @if(ENHANCED)
-    let scale = texture_gradient_scale(texture_ref, textureDimensions(block_textures_page_4, 0));
-    @if(ENHANCED)
-    return textureSampleGrad(block_textures_page_4, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
-    @if(!ENHANCED)
-    if (page == 0u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_0, 0));
-        return textureSampleGrad(terrain_gamma_page_0, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 1u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_1, 0));
-        return textureSampleGrad(terrain_gamma_page_1, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 2u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_2, 0));
-        return textureSampleGrad(terrain_gamma_page_2, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
-    }
-    @if(!ENHANCED)
-    if (page == 3u) {
-        let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_3, 0));
-        return textureSampleGrad(terrain_gamma_page_3, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
-    }
-    @if(!ENHANCED)
-    let scale = texture_gradient_scale(texture_ref, textureDimensions(terrain_gamma_page_4, 0));
-    @if(!ENHANCED)
-    return textureSampleGrad(terrain_gamma_page_4, block_sampler, texture_model_uv(texture_ref, in.uv), layer, dx * scale, dy * scale);
 }
 
 // Coverage shares the authored UV rectangle and gradients for the source image with color.
@@ -802,7 +798,7 @@ repeat_uv: bool) -> CutoutSample {
 // Repeating quads read the neighbouring tile across a seam; single-tile quads stop at their edge.
 @if(ALPHA_TO_COVERAGE)
 fn model_cutout(@if(ALPHA_TO_COVERAGE)
-in: VertexOutput, @if(ALPHA_TO_COVERAGE)
+in: FragmentInput, @if(ALPHA_TO_COVERAGE)
 texture_ref: u32, @if(ALPHA_TO_COVERAGE)
 dx: vec2<f32>, @if(ALPHA_TO_COVERAGE)
 dy: vec2<f32>, @if(ALPHA_TO_COVERAGE)
@@ -830,10 +826,10 @@ fn apply_distance_fog(colour: vec3<f32>, world_position: vec3<f32>) -> vec3<f32>
 // Encode only at our existing Bevy sRGB framebuffer boundary.
 @if(!ENHANCED)
 fn ordinary_world_model_gamma_colour(@if(!ENHANCED)
-in: VertexOutput, @if(!ENHANCED)
+in: FragmentInput, @if(!ENHANCED)
 sampled_gamma: vec4<f32>) -> vec4<f32> {
     // Alpha-masked tint: alpha weights the tint and the face stays opaque, as on cube faces.
-    let overlay = material_uses_overlay_mask(in.material_flags);
+    let overlay = material_uses_overlay_mask(in.textures_meta.z);
     let tint_gamma = select(in.tint_gamma, mix(vec3(1.0), in.tint_gamma, sampled_gamma.a), overlay);
     // Cinnabar masks: emissive texels skip shade and lightmap; glow adds before fog.
     let dx = dpdx(in.uv);
@@ -848,22 +844,22 @@ sampled_gamma: vec4<f32>) -> vec4<f32> {
     if (in.visibility.w != 0u) {
         unlit = clamp(sample_model_ref(in, material_mask_reference(in.visibility.w), dx, dy).a * strength, 0.0, 1.0);
     }
-    let lit_gamma = ((sampled_gamma.rgb * tint_gamma) * mix(in.native_ao_face, 1.0, unlit))
-        * mix(point_lit_terrain_light_colour(in.native_light_levels, in.world_position), vec3(1.0), unlit) + glow;
+    let lit_gamma = ((sampled_gamma.rgb * tint_gamma) * mix(in.world_ao.w, 1.0, unlit))
+        * mix(point_lit_terrain_light_colour(in.native_light_levels, in.world_ao.xyz), vec3(1.0), unlit) + glow;
     let fog_gamma = tint_to_gamma(vec4(atmosphere.fog_color_start.rgb, 1.0)).rgb;
-    return vec4(mix(lit_gamma, fog_gamma, distance_fog_amount(in.world_position)), select(sampled_gamma.a, 1.0, overlay));
+    return vec4(mix(lit_gamma, fog_gamma, distance_fog_amount(in.world_ao.xyz)), select(sampled_gamma.a, 1.0, overlay));
 }
 
 @if(!ENHANCED)
 fn ordinary_world_model_colour(@if(!ENHANCED)
-in: VertexOutput, @if(!ENHANCED)
+in: FragmentInput, @if(!ENHANCED)
 sampled_gamma: vec4<f32>) -> vec4<f32> {
     return tint_to_linear(ordinary_world_model_gamma_colour(in, sampled_gamma));
 }
 
 @fragment
 fn fragment(
-    in: VertexOutput,
+    in: FragmentInput,
     @builtin(front_facing) front_facing: bool,
 ) -> @location(0) vec4<f32> {
     if (in.visibility.x == 0u) { discard; }
@@ -871,18 +867,18 @@ fn fragment(
     let dx = dpdx(in.uv);
     let dy = dpdy(in.uv);
     // Both views already hold the working colour space, so frames blend before the alpha test.
-    var sampled = sample_model_ref(in, in.textures.x, dx, dy);
-    if (in.frame_blend > 0.0) {
-        sampled = mix(sampled, sample_model_ref(in, in.textures.y, dx, dy), in.frame_blend);
+    var sampled = sample_model_ref(in, in.textures_meta.x, dx, dy);
+    if (bitcast<f32>(in.textures_meta.w) > 0.0) {
+        sampled = mix(sampled, sample_model_ref(in, in.textures_meta.y, dx, dy), bitcast<f32>(in.textures_meta.w));
     }
-    let alpha_cutout = (in.material_flags & MATERIAL_ALPHA_CUTOUT_FLAG) != 0u;
+    let alpha_cutout = (in.textures_meta.z & MATERIAL_ALPHA_CUTOUT_FLAG) != 0u;
     @if(!ALPHA_TO_COVERAGE)
     if (alpha_cutout && sampled.a < MODEL_ALPHA_THRESHOLD) { discard; }
     @if(ALPHA_TO_COVERAGE)
     if (alpha_cutout) {
-        var cutout = model_cutout(in, in.textures.x, dx, dy, sampled);
-        if (in.frame_blend > 0.0) {
-            cutout = cutout_mix(cutout, model_cutout(in, in.textures.y, dx, dy, sampled), in.frame_blend);
+        var cutout = model_cutout(in, in.textures_meta.x, dx, dy, sampled);
+        if (bitcast<f32>(in.textures_meta.w) > 0.0) {
+            cutout = cutout_mix(cutout, model_cutout(in, in.textures_meta.y, dx, dy, sampled), bitcast<f32>(in.textures_meta.w));
         }
         if (sampled.a < MODEL_ALPHA_THRESHOLD && cutout.coverage > 0.0) { sampled = cutout.colour; }
         sampled.a = cutout.coverage;
@@ -891,20 +887,20 @@ fn fragment(
     @if(OPAQUE_OVERDRAW)
     return vec4(1.0);
     @if(!OPAQUE_OVERDRAW && ENHANCED)
-    let colour = tinted(sampled, in.material_flags, in.biome_record, in.local_position, in.world_origin);
+    let colour = tinted(sampled, in.textures_meta.z, in.biome_surface.x, in.local_position, in.world_origin);
     @if(!OPAQUE_OVERDRAW && ENHANCED)
     let shaded = shade_surface(
         colour.rgb,
-        in.normal,
-        in.world_position,
+        in.normal_sky.xyz,
+        in.world_ao.xyz,
         in.clip_position.xy,
         in.lighting,
-        in.sky_light,
-        in.ambient_occlusion,
-        in.surface_class,
+        in.normal_sky.w,
+        in.world_ao.w,
+        in.biome_surface.y,
     );
     @if(!OPAQUE_OVERDRAW && ENHANCED)
-    return vec4(apply_distance_fog(shaded, in.world_position), output_alpha);
+    return vec4(apply_distance_fog(shaded, in.world_ao.xyz), output_alpha);
     @if(!OPAQUE_OVERDRAW && !ENHANCED)
     let colour = ordinary_world_model_colour(in, sampled);
     @if(!OPAQUE_OVERDRAW && !ENHANCED)
@@ -913,7 +909,7 @@ fn fragment(
 
 @fragment
 fn fragment_blend(
-    in: VertexOutput,
+    in: FragmentInput,
     @builtin(front_facing) front_facing: bool,
 ) -> @location(0) vec4<f32> {
     return shade_blend(in, front_facing, dpdx(in.uv), dpdy(in.uv));
@@ -921,14 +917,14 @@ fn fragment_blend(
 
 // Blended transparent model colour; `dx`/`dy` are the UV derivatives, taken by the caller in
 // uniform control flow.
-fn shade_blend(in: VertexOutput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+fn shade_blend(in: FragmentInput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
     if (in.visibility.x == 0u) { discard; }
     if (!front_facing && (in.visibility.x & MODEL_TWO_SIDED) == 0u) { discard; }
-    var sampled = sample_model_ref(in, in.textures.x, dx, dy);
-    if (in.frame_blend > 0.0) {
-        sampled = mix(sampled, sample_model_ref(in, in.textures.y, dx, dy), in.frame_blend);
+    var sampled = sample_model_ref(in, in.textures_meta.x, dx, dy);
+    if (bitcast<f32>(in.textures_meta.w) > 0.0) {
+        sampled = mix(sampled, sample_model_ref(in, in.textures_meta.y, dx, dy), bitcast<f32>(in.textures_meta.w));
     }
-    if ((in.material_flags & MATERIAL_CAULDRON_WATER_FLAG) != 0u) {
+    if ((in.textures_meta.z & MATERIAL_CAULDRON_WATER_FLAG) != 0u) {
         @if(ENHANCED)
         sampled *= tint_to_linear(CAULDRON_WATER_COLOUR);
         @if(!ENHANCED)
@@ -937,20 +933,20 @@ fn shade_blend(in: VertexOutput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32
     // The background is fogged by the same transfer, so preserving source
     // alpha composes to one fog application instead of double-counting it.
     @if(ENHANCED)
-    let colour = tinted(sampled, in.material_flags, in.biome_record, in.local_position, in.world_origin);
+    let colour = tinted(sampled, in.textures_meta.z, in.biome_surface.x, in.local_position, in.world_origin);
     @if(ENHANCED)
     let shaded = shade_surface(
         colour.rgb,
-        in.normal,
-        in.world_position,
+        in.normal_sky.xyz,
+        in.world_ao.xyz,
         in.clip_position.xy,
         in.lighting,
-        in.sky_light,
-        in.ambient_occlusion,
-        in.surface_class,
+        in.normal_sky.w,
+        in.world_ao.w,
+        in.biome_surface.y,
     );
     @if(ENHANCED)
-    return vec4(apply_distance_fog(shaded, in.world_position), colour.a);
+    return vec4(apply_distance_fog(shaded, in.world_ao.xyz), colour.a);
     @if(!ENHANCED && NATIVE_GAMMA_BLEND)
     return ordinary_world_model_gamma_colour(in, sampled);
     @if(!ENHANCED && !NATIVE_GAMMA_BLEND)
@@ -961,12 +957,12 @@ fn shade_blend(in: VertexOutput, front_facing: bool, dx: vec2<f32>, dy: vec2<f32
 @if(ENHANCED_SHADOW)
 @fragment
 fn fragment_shadow(@if(ENHANCED_SHADOW)
-in: VertexOutput) {
+in: FragmentInput) {
     let dx = dpdx(in.uv);
     let dy = dpdy(in.uv);
-    var sampled = sample_model_ref(in, in.textures.x, dx, dy);
-    if (in.frame_blend > 0.0) {
-        sampled = mix(sampled, sample_model_ref(in, in.textures.y, dx, dy), in.frame_blend);
+    var sampled = sample_model_ref(in, in.textures_meta.x, dx, dy);
+    if (bitcast<f32>(in.textures_meta.w) > 0.0) {
+        sampled = mix(sampled, sample_model_ref(in, in.textures_meta.y, dx, dy), bitcast<f32>(in.textures_meta.w));
     }
-    if (in.visibility.x == 0u || ((in.material_flags & MATERIAL_ALPHA_CUTOUT_FLAG) != 0u && sampled.a < MODEL_ALPHA_THRESHOLD)) { discard; }
+    if (in.visibility.x == 0u || ((in.textures_meta.z & MATERIAL_ALPHA_CUTOUT_FLAG) != 0u && sampled.a < MODEL_ALPHA_THRESHOLD)) { discard; }
 }

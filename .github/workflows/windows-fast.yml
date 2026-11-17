@@ -1,0 +1,65 @@
+name: Windows Fast Build
+
+on:
+  push:
+    branches:
+      - 'arena/**'
+  workflow_dispatch:
+
+concurrency:
+  group: windows-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: always
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Cache Rust build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/play/deps
+            target/play/.fingerprint
+            target/play/build
+          key: win-play-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            win-play-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+            win-play-
+
+      - name: Build cinnabar.exe and bedrock-core.exe
+        run: |
+          export CINNABAR_BUILD_COMMIT="$(git rev-parse HEAD)"
+          cargo build --config 'build.build-dir="target"' --profile play --locked --no-default-features -p cinnabar --bin cinnabar
+          go build -trimpath -ldflags "-s -w $(bash packaging/common/core-ldflags.sh)" -o target/play/bedrock-core.exe ./core/cmd/bedrock-core
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-fast-exe
+          path: |
+            target/play/cinnabar.exe
+            target/play/bedrock-core.exe
+          if-no-files-found: error

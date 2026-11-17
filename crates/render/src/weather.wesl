@@ -37,7 +37,22 @@ struct Layer {
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<uniform> atmosphere: AtmosphereUniform;
-@group(0) @binding(2) var<storage, read> layers: array<Layer>;
+@group(0) @binding(2) var<storage, read> layers: array<vec4<u32>>;
+
+// Raw storage preserves the 80-byte CPU record without a std430 struct block.
+fn load_layers(index: u32) -> Layer {
+    let base = index * 5u;
+    return Layer(vec4<f32>(bitcast<f32>(layers[base + 0u].x), bitcast<f32>(layers[base + 0u].y), bitcast<f32>(layers[base + 0u].z), bitcast<f32>(layers[base + 0u].w)),
+        vec4<f32>(bitcast<f32>(layers[base + 1u].x), bitcast<f32>(layers[base + 1u].y), bitcast<f32>(layers[base + 1u].z), bitcast<f32>(layers[base + 1u].w)),
+        vec4<f32>(bitcast<f32>(layers[base + 2u].x), bitcast<f32>(layers[base + 2u].y), bitcast<f32>(layers[base + 2u].z), bitcast<f32>(layers[base + 2u].w)),
+        vec2<f32>(bitcast<f32>(layers[base + 3u].x), bitcast<f32>(layers[base + 3u].y)),
+        layers[base + 3u].z,
+        layers[base + 3u].w,
+        layers[base + 4u].x,
+        layers[base + 4u].y,
+        layers[base + 4u].z,
+        layers[base + 4u].w);
+}
 @group(0) @binding(3) var<uniform> weather: WeatherParams;
 @group(0) @binding(4) var sheet_texture: texture_2d<f32>;
 @group(0) @binding(5) var sheet_sampler: sampler;
@@ -81,7 +96,7 @@ fn weather_vertex(
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32,
 ) -> VertexOutput {
-    let layer = layers[instance_index];
+    let layer = load_layers(instance_index);
     let quad = vertex_index / 6u;
     var out: VertexOutput;
     if (quad >= layer.particle_count) {

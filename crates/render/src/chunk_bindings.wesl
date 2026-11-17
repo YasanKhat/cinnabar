@@ -53,11 +53,19 @@ fn model_templates_length() -> u32 {
 }
 @group(0) @binding(13) var<storage, read> geometry_streams: array<u32>;
 @if(!PACKED_TERRAIN)
-@group(0) @binding(14) var<storage, read> transparent_refs_data: array<TransparentDrawRef>;
+@group(0) @binding(14) var<storage, read> transparent_refs_data: array<vec2<u32>>;
+
+// Raw storage preserves the 8-byte CPU record without a std430 struct block.
+@if(!PACKED_TERRAIN)
+fn load_transparent_refs_data(index: u32) -> TransparentDrawRef {
+    let base = index * 1u;
+    return TransparentDrawRef(transparent_refs_data[base + 0u].x,
+        transparent_refs_data[base + 0u].y);
+}
 
 // Reads the same typed record from either terrain layout.
 fn transparent_refs(index: u32) -> TransparentDrawRef {
-    @if(!PACKED_TERRAIN) return transparent_refs_data[index];
+    @if(!PACKED_TERRAIN) return load_transparent_refs_data(index);
     @if(PACKED_TERRAIN) {
         if (index >= transparent_refs_length()) { var empty: TransparentDrawRef; return empty; }
         let base = index * 2u;

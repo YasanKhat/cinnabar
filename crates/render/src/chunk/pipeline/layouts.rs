@@ -18,6 +18,12 @@ pub fn required_vertex_storage_buffers() -> u32 {
     vertex_storage_buffers(&chunk_bind_group_layout())
 }
 
+/// GL also needs the compact path: fewer SSBO blocks avoid Gen7.5 linker pressure.
+pub(in crate::chunk) fn uses_compact_terrain(device: &RenderDevice) -> bool {
+    device.limits().max_storage_buffers_per_shader_stage < required_vertex_storage_buffers()
+        || device.wgpu_device().adapter_info().backend == wgpu::Backend::Gl
+}
+
 /// Minimum storage slots used by the compact terrain layout.
 pub fn minimum_vertex_storage_buffers() -> u32 {
     vertex_storage_buffers(&compact_chunk_bind_group_layout())
@@ -27,24 +33,42 @@ pub(in crate::chunk) struct ChunkPipelineSpecializer;
 
 #[derive(Resource)]
 pub(crate) struct ChunkPipeline {
-    pub(in crate::chunk) variants: Variants<RenderPipeline, ChunkPipelineSpecializer>,
-    pub(in crate::chunk) unit_variants: [Variants<RenderPipeline, ChunkPipelineSpecializer>; 4],
+    pub(in crate::chunk) variants: Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<ChunkPipelineSpecializer>,
+    >,
+    pub(in crate::chunk) unit_variants: [Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<ChunkPipelineSpecializer>,
+    >; 4],
     pub(in crate::chunk) unit_supported: bool,
     pub(in crate::chunk) compact: bool,
-    pub(in crate::chunk) solid_variants: Variants<RenderPipeline, ChunkPipelineSpecializer>,
-    pub(in crate::chunk) model_variants: Variants<RenderPipeline, ChunkPipelineSpecializer>,
+    pub(in crate::chunk) solid_variants: Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<ChunkPipelineSpecializer>,
+    >,
+    pub(in crate::chunk) model_variants: Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<ChunkPipelineSpecializer>,
+    >,
     /// Sorted transparent liquid and model draws, one pipeline so they never switch programs.
-    pub(in crate::chunk) transparent_variants: Variants<RenderPipeline, ChunkPipelineSpecializer>,
-    pub(in crate::chunk) depth_liquid_variants: Variants<RenderPipeline, ChunkPipelineSpecializer>,
+    pub(in crate::chunk) transparent_variants: Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<ChunkPipelineSpecializer>,
+    >,
+    pub(in crate::chunk) depth_liquid_variants: Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<ChunkPipelineSpecializer>,
+    >,
     pub(in crate::chunk) bind_group_layout: BindGroupLayoutDescriptor,
     pub(in crate::chunk) transparent_bind_group_layout: BindGroupLayoutDescriptor,
 }
 
 impl FromWorld for ChunkPipeline {
     fn from_world(world: &mut World) -> Self {
-        let compact = world.get_resource::<RenderDevice>().is_some_and(|device| {
-            device.limits().max_storage_buffers_per_shader_stage < required_vertex_storage_buffers()
-        });
+        let compact = world
+            .get_resource::<RenderDevice>()
+            .is_some_and(uses_compact_terrain);
         let [
             descriptor,
             solid_descriptor,
@@ -60,16 +84,36 @@ impl FromWorld for ChunkPipeline {
             &model_descriptor,
             &depth_liquid_descriptor,
         ]
-        .map(|descriptor| Variants::new(ChunkPipelineSpecializer, unit_descriptor(descriptor)));
+        .map(|descriptor| {
+            Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(ChunkPipelineSpecializer, world),
+                unit_descriptor(descriptor),
+            )
+        });
         Self {
             compact,
             unit_variants,
             unit_supported: false,
-            variants: Variants::new(ChunkPipelineSpecializer, descriptor),
-            solid_variants: Variants::new(ChunkPipelineSpecializer, solid_descriptor),
-            model_variants: Variants::new(ChunkPipelineSpecializer, model_descriptor),
-            transparent_variants: Variants::new(ChunkPipelineSpecializer, transparent_descriptor),
-            depth_liquid_variants: Variants::new(ChunkPipelineSpecializer, depth_liquid_descriptor),
+            variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(ChunkPipelineSpecializer, world),
+                descriptor,
+            ),
+            solid_variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(ChunkPipelineSpecializer, world),
+                solid_descriptor,
+            ),
+            model_variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(ChunkPipelineSpecializer, world),
+                model_descriptor,
+            ),
+            transparent_variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(ChunkPipelineSpecializer, world),
+                transparent_descriptor,
+            ),
+            depth_liquid_variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(ChunkPipelineSpecializer, world),
+                depth_liquid_descriptor,
+            ),
             bind_group_layout,
             transparent_bind_group_layout,
         }

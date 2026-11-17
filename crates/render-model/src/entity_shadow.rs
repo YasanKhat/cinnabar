@@ -1,6 +1,10 @@
 //! Entity shadows darken visible opaque surfaces inside a polygonal volume under each caster.
 //! A volume containing the camera draws no shadow. See `docs/reference/entity-shadows.md`.
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+/// Geometry-only uniforms shared by CPU containment and every frame's GPU parameters.
+static SHADOW_GEOMETRY: LazyLock<EntityShadowParams> =
+    LazyLock::new(|| EntityShadowParams::geometry([1.0; 4]));
 
 /// Sides of the volume's cross-section.
 pub const SHADOW_VOLUME_SIDES: usize = 13;
@@ -62,11 +66,13 @@ pub fn unit_volume_contains([x, y, z]: [f32; 3]) -> bool {
     if !(SHADOW_VOLUME_BOTTOM_Y..=SHADOW_VOLUME_TOP_Y).contains(&y) {
         return false;
     }
-    let params = EntityShadowParams::new([1.0; 4]);
+    let params = &*SHADOW_GEOMETRY;
     let apothem = params.volume[2] + params.volume[3] * y;
-    side_normals()
-        .iter()
-        .all(|[nx, nz]| x * nx + z * nz <= apothem)
+    (0..SHADOW_VOLUME_SIDES).all(|side| {
+        let pair = &params.normals[side / 2];
+        let offset = (side % 2) * 2;
+        x * pair[offset] + z * pair[offset + 1] <= apothem
+    })
 }
 
 /// Outward horizontal normals of the side faces, `(x, z)`.
@@ -98,29 +104,25 @@ fn ring_point(index: usize, top: bool) -> [f32; 3] {
 /// Radius-1 triangle list, wound counter-clockwise seen from outside.
 #[must_use]
 pub fn shadow_volume_mesh() -> [[f32; 3]; SHADOW_VOLUME_VERTICES] {
-    let mut triangles = Vec::with_capacity(SHADOW_VOLUME_VERTICES / 3);
+    let low: [_; SHADOW_VOLUME_SIDES] = std::array::from_fn(|i| ring_point(i, false));
+    let high: [_; SHADOW_VOLUME_SIDES] = std::array::from_fn(|i| ring_point(i, true));
+    let mut triangles = [[[0.0; 3]; 3]; SHADOW_VOLUME_VERTICES / 3];
+    let mut count = 0;
+    let mut push = |triangle| {
+        triangles[count] = triangle;
+        count += 1;
+    };
     for side in 0..SHADOW_VOLUME_SIDES {
-        let (low, high) = (ring_point(side, false), ring_point(side + 1, false));
-        let (top_low, top_high) = (ring_point(side, true), ring_point(side + 1, true));
-        triangles.push([low, high, top_high]);
-        triangles.push([low, top_high, top_low]);
+        let next = (side + 1) % SHADOW_VOLUME_SIDES;
+        push([low[side], low[next], high[next]]);
+        push([low[side], high[next], high[side]]);
     }
     for index in 1..SHADOW_VOLUME_SIDES - 1 {
-        let ring = |top| {
-            [
-                ring_point(0, top),
-                ring_point(index, top),
-                ring_point(index + 1, top),
-            ]
-        };
-        triangles.push(ring(true));
-        let [first, middle, last] = ring(false);
-        triangles.push([first, last, middle]);
+        push([high[0], high[index], high[index + 1]]);
+        push([low[0], low[index + 1], low[index]]);
     }
-    let corners: Vec<_> = triangles.into_iter().flatten().collect();
-    corners
-        .try_into()
-        .expect("mesh size matches SHADOW_VOLUME_VERTICES")
+    assert_eq!(count, triangles.len());
+    std::array::from_fn(|index| triangles[index / 3][index % 3])
 }
 
 /// Uniform block shared by every shadow in a frame.
@@ -139,6 +141,14 @@ pub struct EntityShadowParams {
 impl EntityShadowParams {
     #[must_use]
     pub fn new(colour: [f32; 4]) -> Self {
+        Self {
+            colour,
+            ..*SHADOW_GEOMETRY
+        }
+    }
+
+    /// Computes immutable volume planes once; colour remains a per-frame input.
+    fn geometry(colour: [f32; 4]) -> Self {
         let apothem = (std::f32::consts::PI / SHADOW_VOLUME_SIDES as f32).cos();
         let slope = apothem * (SHADOW_VOLUME_TOP_RADIUS - SHADOW_VOLUME_BOTTOM_RADIUS)
             / (SHADOW_VOLUME_TOP_Y - SHADOW_VOLUME_BOTTOM_Y);

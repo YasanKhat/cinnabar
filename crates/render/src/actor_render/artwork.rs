@@ -466,13 +466,14 @@ fn upload_page(
     let texture = gpu_allocation::checked(device, label, page.rgba8.len() as u64, || {
         device.create_texture(&TextureDescriptor {
             label: Some(label),
+            // Glints bind as D2, not D2Array. Array pages allocate in artwork_upload.
             size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::Rgba8UnormSrgb,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: raw_views.view_formats(),
+            view_formats: raw_views.view_formats(device),
         })
     })?;
     #[cfg(test)]
