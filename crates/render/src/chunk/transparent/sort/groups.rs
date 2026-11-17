@@ -47,12 +47,20 @@ pub(in crate::chunk) fn build_transparent_group(
     {
         return Err(ceiling);
     }
+    let uniform_tint = instance.biome.uniform_tint_index();
     let mut tint_colors = Vec::new();
+    if !quads.is_empty()
+        && let Some(index) = uniform_tint
+        && let Some(tint) = biome_tints.entries().get(index as usize)
+    {
+        tint_colors.push(tint.water.map(f32::to_bits));
+    }
     let centroids = quads
         .iter()
         .map(|&quad| {
             let local = quad.origin();
-            if let Some(tint_index) = instance.biome.tint_index(local[0], local[1], local[2])
+            if uniform_tint.is_none()
+                && let Some(tint_index) = instance.biome.tint_index(local[0], local[1], local[2])
                 && let Some(tint) = biome_tints.entries().get(tint_index as usize)
             {
                 tint_colors.push(tint.water.map(f32::to_bits));
@@ -135,3 +143,7 @@ pub(in crate::chunk) fn spawn_transparent_sort(
     #[cfg(target_arch = "wasm32")]
     crate::browser_jobs::submit(crate::browser_jobs::Lane::Transparent, work);
 }
+
+#[cfg(test)]
+#[path = "groups_tests.rs"]
+mod tests;

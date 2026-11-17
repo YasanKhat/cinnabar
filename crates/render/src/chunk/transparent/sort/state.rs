@@ -570,8 +570,12 @@ impl TransparentSortState {
             if let Some((urgent, deferred)) = in_place {
                 committed.generation = result.generation;
                 committed.key = result.key;
-                if !Arc::ptr_eq(&committed.refs, &result.refs) {
+                let same_refs = Arc::ptr_eq(&committed.refs, &result.refs);
+                if !same_refs {
                     committed.refs = result.refs;
+                }
+                // Shared bytes may now belong to fewer groups or a different camera class.
+                if !same_refs || result.layout.is_some() {
                     committed.layout = LayoutCache::with(result.layout);
                 }
                 // Keep deferred writes only where the resized slot still has refs.

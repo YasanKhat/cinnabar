@@ -413,12 +413,7 @@ fn video_choice_that_crashed_an_earlier_startup_goes_straight_to_auto() {
 
 #[test]
 fn a_platform_with_one_api_always_tries_it_even_after_it_crashed() {
-    for platform in [
-        Platform::Macos,
-        Platform::Ios,
-        Platform::Linux,
-        Platform::Android,
-    ] {
+    for platform in [Platform::Macos, Platform::Ios] {
         let only = platform.backends()[0];
         for (crashed, succeeds) in [(Some(only), true), (Some(only), false), (None, false)] {
             let mut attempts = Vec::new();

@@ -171,6 +171,7 @@ pub struct ActorRenderScene {
     frame: ActorRenderFrame,
     rig_builder: ActorRigFrameBuilder,
     skin_slots: render_model::actor::skin_slots::SkinSlots,
+    coverage_scratch: coverage::CoverageScratch,
 }
 
 impl Default for ActorRenderScene {
@@ -180,6 +181,7 @@ impl Default for ActorRenderScene {
             rig_builder: ActorRigFrameBuilder::new([])
                 .expect("authored diagnostic actor geometry is valid"),
             skin_slots: Default::default(),
+            coverage_scratch: Default::default(),
         }
     }
 }
@@ -205,6 +207,7 @@ impl ActorRenderScene {
             frame: ActorRenderFrame::default(),
             rig_builder: ActorRigFrameBuilder::from_runtime_assets(assets)?,
             skin_slots: Default::default(),
+            coverage_scratch: Default::default(),
         })
     }
 
@@ -221,6 +224,7 @@ impl ActorRenderScene {
                 equipment_geometries,
             )?,
             skin_slots: Default::default(),
+            coverage_scratch: Default::default(),
         })
     }
 
@@ -388,22 +392,22 @@ impl ActorRenderScene {
         } else {
             MAX_RENDERED_PLAYERS
         };
-        let mut visible = sources
+        let visible = sources
             .into_iter()
             .filter_map(|source| {
                 let pose = Pose::sample(&source, partial_tick);
                 actor_is_visible(&pose, view).then_some((source, pose))
             })
             .take(remote_capacity)
-            .collect::<Vec<_>>();
-        if let Some(local) = local {
-            let pose = Pose::sample(&local, partial_tick);
-            visible.push((local, pose));
-        }
+            .chain(local.map(|local| {
+                let pose = Pose::sample(&local, partial_tick);
+                (local, pose)
+            }));
 
-        let mut instances = Vec::with_capacity(visible.len());
-        let mut skins = Vec::with_capacity(visible.len());
-        let mut rig_submissions = Vec::with_capacity(visible.len());
+        let capacity = visible.size_hint().1.unwrap_or(MAX_RENDERED_PLAYERS);
+        let mut instances = Vec::with_capacity(capacity);
+        let mut skins = Vec::with_capacity(capacity);
+        let mut rig_submissions = Vec::with_capacity(capacity);
         for (source, pose) in visible {
             let skin_layer = u32::try_from(instances.len()).expect("bounded actor layer count");
             instances.push(ActorRenderInstance {
@@ -436,6 +440,7 @@ impl ActorRenderScene {
             posed_bones[0].rotation = head_rotation;
             let yaw = wrap_degrees(pose.yaw_degrees).to_radians();
             let (sine, cosine) = yaw.sin_cos();
+            let posed_bones: Arc<[RenderBoneTransform]> = Arc::from(posed_bones);
             rig_submissions.push(ActorRigSubmission {
                 material: Default::default(),
                 culling_bounds: Default::default(),
@@ -452,8 +457,8 @@ impl ActorRenderScene {
                         layer: ACTOR_LAYER_BODY,
                     },
                     rig: EntityRigId(u32::MAX),
-                    previous_bones: Arc::from(posed_bones),
-                    current_bones: Arc::from(posed_bones),
+                    previous_bones: Arc::clone(&posed_bones),
+                    current_bones: posed_bones,
                     completed_tick: source.movement_revision,
                     reset_generation: source.spawn_revision.get(),
                 },

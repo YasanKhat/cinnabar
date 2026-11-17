@@ -160,3 +160,56 @@ fn applied_column_changes_match_full_reconciliation() {
         assert_eq!(full.revision, incremental.revision, "step {step}");
     }
 }
+
+#[test]
+fn linear_retirement_matches_membership_reference_without_allocations() {
+    let column: Vec<_> = (-8..8).map(|y| SubChunkKey::new(0, 0, y, 0)).collect();
+    for previous_mask in [0u16, 1, 0xaaaa, 0x5555, u16::MAX] {
+        let previous: Vec<_> = column
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(i, _)| previous_mask & (1 << i) != 0)
+            .map(|(_, key)| key)
+            .collect();
+        for current_mask in [0u16, 1, 0xaaaa, 0x5555, u16::MAX] {
+            let current: Vec<_> = column
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(i, _)| current_mask & (1 << i) != 0)
+                .map(|(_, key)| key)
+                .collect();
+            let expected: Vec<_> = previous
+                .iter()
+                .copied()
+                .filter(|key| !current.contains(key))
+                .collect();
+            let (matches, allocations) = test_alloc::count(|| {
+                removed_sections(&previous, &current).eq(expected.iter().copied())
+            });
+            assert!(matches);
+            assert_eq!(allocations, 0);
+        }
+    }
+}
+
+#[test]
+fn identical_normalized_delta_preserves_receipts_and_revision() {
+    let source = TerrainPublications::default();
+    let keys: Vec<_> = (-16..16).map(|y| SubChunkKey::new(0, 0, y, 0)).collect();
+    retain_keys(&source, keys.iter().copied());
+    for &key in &keys {
+        source.record(key, 7, true);
+    }
+    let (revision, before) = source.changed_empty(None).unwrap();
+    let input = keys
+        .iter()
+        .rev()
+        .copied()
+        .chain(keys.iter().copied())
+        .collect();
+    source.retain(false, [(keys[0].chunk(), input)]);
+    assert!(source.changed_empty(Some(revision)).is_none());
+    assert_eq!(source.changed_empty(None).unwrap().1, before);
+}

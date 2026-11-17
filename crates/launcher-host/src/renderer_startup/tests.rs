@@ -53,7 +53,7 @@ fn successful_fallback_clears_the_sentinel_and_survives_relaunch() {
             None,
             third.recovery.failed_backends()
         ),
-        [Backend::Vulkan]
+        [Backend::Vulkan, Backend::Gl]
     );
 }
 

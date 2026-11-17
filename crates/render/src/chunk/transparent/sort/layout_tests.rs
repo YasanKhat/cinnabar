@@ -230,3 +230,91 @@ fn oversized_or_fragmenting_changes_pack_afresh() {
         "a freed range is reused rather than appended"
     );
 }
+
+#[test]
+fn unchanged_slot_shares_reference_storage() {
+    let groups = [group(0, 1, 0, 4096), group(4, 1, 5000, 4096)];
+    let packed = plan(CAMERA, &groups, None, usize::MAX);
+    let base = base_of(&packed, &groups);
+    let again = plan(CAMERA, &groups, Some(&base), usize::MAX);
+    assert!(Arc::ptr_eq(&again.refs, &base.refs));
+    assert_eq!(again.sorted_refs, 0);
+    assert_eq!(again.layout, base.layout);
+    let patch = again.patch.unwrap();
+    assert!(patch.urgent.is_empty());
+    assert!(patch.deferred.is_empty());
+}
+
+#[test]
+fn removal_keeps_shared_bytes_but_commits_the_new_layout() {
+    let old = [
+        group(0, 1, 0, 40),
+        group(2, 1, 100, 30),
+        group(4, 1, 200, 40),
+    ];
+    let packed = plan(CAMERA, &old, None, usize::MAX);
+    let retained = [old[0].clone(), old[2].clone()];
+    let output = plan(CAMERA, &retained, Some(&base_of(&packed, &old)), usize::MAX);
+    assert!(Arc::ptr_eq(&output.refs, &packed.refs));
+    let expected_layout = output.layout.clone();
+    let old_key = ViewSortKey::try_new(
+        CAMERA.to_array(),
+        allocations(&old),
+        ChunkTextureAssetIdentity::new(1, 1),
+        ChunkBiomeTintIdentity::default(),
+    )
+    .unwrap();
+    let next_key = ViewSortKey::try_new(
+        CAMERA.to_array(),
+        allocations(&retained),
+        ChunkTextureAssetIdentity::new(1, 1),
+        ChunkBiomeTintIdentity::default(),
+    )
+    .unwrap();
+    let mut state = TransparentSortState::with_upload_cap(usize::MAX);
+    let generation = state.request(&old_key);
+    state
+        .complete(TransparentSortResult::planned(generation, old_key, packed).unwrap())
+        .unwrap();
+    while state.next_upload_batch().is_some() {
+        state.acknowledge_upload();
+    }
+    let generation = state.request_retaining_resident_snapshot(&next_key, true, true);
+    assert!(
+        state
+            .complete(TransparentSortResult::planned(generation, next_key, output).unwrap())
+            .unwrap()
+    );
+    assert_eq!(state.committed().unwrap().layout(), Some(&expected_layout));
+}
+
+#[test]
+fn changed_order_does_not_mutate_the_committed_snapshot() {
+    let groups = [group(0, 1, 0, 40), group(4, 1, 100, 40)];
+    let packed = plan(CAMERA, &groups, None, usize::MAX);
+    let before = packed.refs.to_vec();
+    let moved = CAMERA + Vec3::new(32.0, 0.0, 0.0);
+    let output = plan(moved, &groups, Some(&base_of(&packed, &groups)), usize::MAX);
+    assert!(!Arc::ptr_eq(&output.refs, &packed.refs));
+    assert_eq!(&*packed.refs, before.as_slice());
+    assert_eq!(
+        by_key(&output),
+        by_key(&plan(moved, &groups, None, usize::MAX))
+    );
+}
+
+#[test]
+fn remesh_with_identical_addresses_still_marks_the_range_urgent() {
+    let old = [group(0, 1, 0, 40), group(4, 1, 100, 40)];
+    let packed = plan(CAMERA, &old, None, usize::MAX);
+    let remeshed = [old[0].clone(), group(4, 2, 100, 40)];
+    let output = plan(CAMERA, &remeshed, Some(&base_of(&packed, &old)), usize::MAX);
+    assert!(Arc::ptr_eq(&output.refs, &packed.refs));
+    let patch = output.patch.as_ref().unwrap();
+    assert_eq!(patch.urgent, [40..80]);
+    assert!(patch.deferred.is_empty());
+    assert_eq!(
+        by_key(&output),
+        by_key(&plan(CAMERA, &remeshed, None, usize::MAX))
+    );
+}

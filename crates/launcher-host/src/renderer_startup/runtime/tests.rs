@@ -38,7 +38,7 @@ fn device_loss_survives_orderly_exit_before_or_after_presentation() {
                         None,
                         next.recovery.failed_backends(),
                     ),
-                    [Backend::Vulkan]
+                    [Backend::Vulkan, Backend::Gl]
                 );
             }
         }

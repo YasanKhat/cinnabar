@@ -47,12 +47,13 @@ impl TerrainPublications {
         } else {
             for (column, keys) in columns {
                 let keys = normalized_column(column, keys);
+                if state.retained.get(&column) == Some(&keys) {
+                    continue;
+                }
                 if let Some(previous) = state.retained.remove(&column) {
-                    for key in previous {
-                        if keys.binary_search(&key).is_err() {
-                            state.latest.remove(&key);
-                            removed_empty |= state.empty.remove(&key);
-                        }
+                    for key in removed_sections(&previous, &keys) {
+                        state.latest.remove(&key);
+                        removed_empty |= state.empty.remove(&key);
                     }
                 }
                 if !keys.is_empty() {
@@ -112,6 +113,20 @@ fn normalized_column(column: ChunkKey, mut keys: Vec<SubChunkKey>) -> Vec<SubChu
     keys.sort_unstable();
     keys.dedup();
     keys
+}
+
+/// Walks two normalized columns once; additions do not invalidate existing receipts.
+fn removed_sections<'a>(
+    previous: &'a [SubChunkKey],
+    current: &'a [SubChunkKey],
+) -> impl Iterator<Item = SubChunkKey> + 'a {
+    let mut remaining = current.iter().peekable();
+    previous.iter().copied().filter(move |key| {
+        while remaining.peek().is_some_and(|candidate| **candidate < *key) {
+            remaining.next();
+        }
+        remaining.peek().is_none_or(|candidate| **candidate != *key)
+    })
 }
 
 /// Checks the retained column scope shared by every extracted receipt handle.
