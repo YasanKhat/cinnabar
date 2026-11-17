@@ -250,7 +250,8 @@ pub(crate) fn prepare_resources(
     raw_views: Option<Res<crate::actor::gpu::ArtworkRawViews>>,
     mut shared_atlases: SharedAtlasRelease,
 ) {
-    let raw_views = crate::actor::gpu::ArtworkRawViews::current(raw_views);
+    let raw_views =
+        crate::actor::gpu::ArtworkRawViews::current(raw_views).for_device(&uploads.device);
     let atmosphere = atmosphere.as_deref().copied().unwrap_or_default();
     let [red, green, blue] = atmosphere.fog_color();
     let portal_parameters = [
@@ -425,7 +426,7 @@ fn upload_atlas(
             dimension: TextureDimension::D2,
             format: TextureFormat::Rgba8UnormSrgb,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: raw_views.view_formats(),
+            view_formats: raw_views.view_formats(device),
         },
     )?;
     let bytes = atlas.static_rgba8.len() as u64;

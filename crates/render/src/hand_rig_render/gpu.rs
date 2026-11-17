@@ -46,6 +46,7 @@ pub(super) struct HandRigSkin {
 
 #[derive(Resource)]
 pub(super) struct HandRigGpu {
+    pub(super) alternate_views: bool,
     pub(super) layout: BindGroupLayoutDescriptor,
     pub(super) sampler: Sampler,
     pub(super) view_uniform: Buffer,
@@ -80,7 +81,11 @@ pub(super) struct HandRigGpu {
 }
 
 /// Allocates persistent rig buffers, layouts and nearest-sampled artwork bindings.
-pub(super) fn init_gpu(mut commands: Commands, device: Res<RenderDevice>) {
+pub(super) fn init_gpu(
+    mut commands: Commands,
+    device: Res<RenderDevice>,
+    adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
+) {
     let mut layout = hand_rig_layout();
     if device.limits().max_storage_buffers_per_shader_stage
         < crate::device_settings::vertex_storage_buffers(&layout)
@@ -100,6 +105,12 @@ pub(super) fn init_gpu(mut commands: Commands, device: Res<RenderDevice>) {
         usage: BufferUsages::UNIFORM,
     });
     commands.insert_resource(HandRigGpu {
+        alternate_views: adapter.as_ref().map_or_else(
+            || crate::texture_compat::device_alternate_views(&device),
+            |adapter| {
+                crate::texture_compat::alternate_views(adapter.get_downlevel_capabilities().flags)
+            },
+        ),
         layout,
         sampler: device.create_sampler(&SamplerDescriptor {
             label: Some("first-person rig binary-alpha nearest"),
@@ -160,7 +171,7 @@ pub(super) fn prepare(
     )>,
     raw_views: Option<Res<ArtworkRawViews>>,
 ) {
-    let raw_views = ArtworkRawViews::current(raw_views);
+    let raw_views = ArtworkRawViews::current(raw_views).for_device(&uploads.device);
     if gpu.raw_views != raw_views {
         gpu.raw_views = raw_views;
     }
@@ -206,7 +217,7 @@ pub(super) fn prepare(
     build_bind_group(&mut gpu, &uploads.device, &cache);
     let gpu = &mut *gpu;
     let layout = gpu.layout.clone();
-    let encoded = bindings::hand_uses_encoded_color(&frame.light, hdr);
+    let encoded = gpu.alternate_views && bindings::hand_uses_encoded_color(&frame.light, hdr);
     gpu.pipeline = memoized_pipeline(&mut gpu.pipeline_variants, samples, hdr, encoded, || {
         cache.queue_render_pipeline(specialized_pipeline(layout.clone(), samples, hdr, encoded))
     });
@@ -429,7 +440,7 @@ pub(super) fn upload_skin(
             format,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: if format.is_srgb() {
-                gpu.raw_views.view_formats()
+                gpu.raw_views.view_formats(device)
             } else {
                 &[]
             },
@@ -506,7 +517,7 @@ pub(super) fn upload_atlas(
                 format,
                 usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
                 view_formats: if format.is_srgb() {
-                    raw_views.view_formats()
+                    raw_views.view_formats(device)
                 } else {
                     &[]
                 },
@@ -581,7 +592,7 @@ pub(super) fn upload_glint(
             dimension: TextureDimension::D2,
             format: TextureFormat::Rgba8UnormSrgb,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: gpu.raw_views.view_formats(),
+            view_formats: gpu.raw_views.view_formats(device),
         },
         TextureDataOrder::LayerMajor,
         data,
@@ -944,9 +955,10 @@ impl crate::pipeline_warmup::PrewarmPipelines for HandRigGpu {
     ) -> Result<(), BevyError> {
         let layout = &self.layout;
         let samples = view.msaa.samples();
+        let alternate_views = self.alternate_views;
         for encoded in [false, true]
             .into_iter()
-            .filter(|encoded| !encoded || !view.hdr)
+            .filter(|encoded| !encoded || (!view.hdr && alternate_views))
         {
             let id = memoized_pipeline(
                 &mut self.pipeline_variants,

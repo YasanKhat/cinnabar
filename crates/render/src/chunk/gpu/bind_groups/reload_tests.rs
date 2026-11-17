@@ -22,6 +22,7 @@ fn obsolete_atlas_completion_cannot_stage_or_publish_replacement_geometry() {
         &candidate,
         world.resource::<RenderDevice>(),
         world.resource::<RenderQueue>(),
+        true,
     )
     .unwrap();
     reload.cancel_except(world.resource::<ChunkTextureAssets>().binding_identity());
@@ -73,7 +74,8 @@ fn acknowledged_snapshot_publishes_without_clearing_a_newer_request() {
     let reload = ChunkTextureReload::default();
     reload.request_geometry(reload.geometry_epoch(), candidate.clone(), Arc::from([]));
     let acknowledged = reload.preparation().unwrap();
-    let (prepared, uploaded) = build_chunk_texture_assets(&candidate, &device, &queue).unwrap();
+    let (prepared, uploaded) =
+        build_chunk_texture_assets(&candidate, &device, &queue, true).unwrap();
     let material_buffer = prepared.material_buffer.id();
     let geometry = PreparedResourceGeometry::build(
         &[],

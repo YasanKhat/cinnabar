@@ -26,9 +26,17 @@ impl ArtworkRawViews {
         raw.as_deref().copied().unwrap_or_default()
     }
 
+    /// Disables raw-view publication as well as allocation on the GLES backend.
+    pub(crate) fn for_device(self, device: &bevy::render::renderer::RenderDevice) -> Self {
+        Self(self.0 && crate::texture_compat::device_alternate_views(device))
+    }
+
     /// The view formats artwork textures are created with.
-    pub(crate) fn view_formats(self) -> &'static [bevy::render::render_resource::TextureFormat] {
-        if self.0 {
+    pub(crate) fn view_formats(
+        self,
+        device: &bevy::render::renderer::RenderDevice,
+    ) -> &'static [bevy::render::render_resource::TextureFormat] {
+        if self.0 && crate::texture_compat::device_alternate_views(device) {
             &[bevy::render::render_resource::TextureFormat::Rgba8Unorm]
         } else {
             &[]
@@ -56,8 +64,14 @@ pub(crate) fn extract_artwork_raw_views(
         >,
     >,
     mut raw: bevy::prelude::ResMut<ArtworkRawViews>,
+    adapter: Option<bevy::prelude::Res<bevy::render::renderer::RenderAdapter>>,
 ) {
-    let wanted = ArtworkRawViews(!cameras.is_empty());
+    let wanted = ArtworkRawViews(
+        !cameras.is_empty()
+            && adapter.as_ref().is_none_or(|adapter| {
+                crate::texture_compat::alternate_views(adapter.get_downlevel_capabilities().flags)
+            }),
+    );
     if *raw != wanted {
         *raw = wanted;
     }
@@ -229,8 +243,10 @@ mod tests {
 
     #[test]
     fn artwork_raw_view_formats_require_camera_demand() {
-        assert!(ArtworkRawViews::default().view_formats().is_empty());
-        let formats = ArtworkRawViews(true).view_formats();
+        let (device, _) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        let device = bevy::render::renderer::RenderDevice::from(device);
+        assert!(ArtworkRawViews::default().view_formats(&device).is_empty());
+        let formats = ArtworkRawViews(true).view_formats(&device);
         assert_eq!(formats, [wgpu::TextureFormat::Rgba8Unorm]);
     }
 

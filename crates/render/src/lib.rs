@@ -9,6 +9,7 @@ mod depth_smaa;
 #[cfg(any(test, feature = "publication-test-support"))]
 #[path = "../tests/it/support/gpu_snapshot.rs"]
 mod gpu_snapshot;
+mod texture_compat;
 pub use depth_smaa::DepthSmaaPlugin;
 mod lighting;
 

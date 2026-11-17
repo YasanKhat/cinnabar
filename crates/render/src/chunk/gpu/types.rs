@@ -142,7 +142,8 @@ const QUALCOMM_VULKAN_DRIVER: &str = "Qualcomm Technologies Inc. Adreno Vulkan D
 /// Keeps Apple expansion costs, proprietary Adreno Vulkan failures and legacy Intel DX12
 /// driver failures on direct terrain draws.
 pub(in crate::chunk) fn direct_draws_required(info: &wgpu::AdapterInfo) -> bool {
-    apple_gpu_identity(info.vendor, &info.driver, &info.name)
+    info.backend == wgpu::Backend::Gl
+        || apple_gpu_identity(info.vendor, &info.driver, &info.name)
         || (info.backend == wgpu::Backend::Vulkan
             && info.vendor == QUALCOMM_VENDOR_ID
             && info.driver == QUALCOMM_VULKAN_DRIVER)
@@ -168,7 +169,7 @@ pub(in crate::chunk) fn select_chunk_draw_mode(
         // Metal firmware lockups attributed to this client also stall
         // WindowServer. Keep the equivalent CPU-validated direct draws on
         // Metal until indirect submission has passed a native stability gate.
-        && !backend.contains(Backends::METAL)
+        && !backend.intersects(Backends::METAL | Backends::GL)
         && !direct_required
     {
         ChunkDrawMode::MultiDrawIndirect
@@ -190,6 +191,21 @@ mod direct_draw_tests {
             driver: driver.into(),
             ..wgpu::AdapterInfo::new(wgpu::DeviceType::IntegratedGpu, backend)
         }
+    }
+
+    #[test]
+    fn gl_uses_direct_draws_even_if_indirect_features_are_advertised() {
+        let info = adapter(INTEL_VENDOR_ID, wgpu::Backend::Gl, "Intel HD Graphics 4600");
+        assert!(direct_draws_required(&info));
+        assert_eq!(
+            select_chunk_draw_mode(
+                DownlevelFlags::all(),
+                WgpuFeatures::all(),
+                Backends::GL,
+                false,
+            ),
+            ChunkDrawMode::Direct
+        );
     }
 
     #[test]

@@ -17,7 +17,7 @@ fn atlas_views_share_each_uploaded_texture_page() {
     let device = RenderDevice::from(device);
     let queue = RenderQueue::new(queue);
     let (prepared, stats) =
-        build_chunk_texture_assets(&ChunkTextureAssets::default(), &device, &queue).unwrap();
+        build_chunk_texture_assets(&ChunkTextureAssets::default(), &device, &queue, true).unwrap();
 
     let report = instance.generate_report().unwrap();
     assert_eq!(report.hub.textures.num_allocated, assets::MAX_TEXTURE_PAGES);

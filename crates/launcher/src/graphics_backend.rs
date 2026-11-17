@@ -50,7 +50,7 @@ backends!(Vulkan => ("vulkan", "Vulkan"), Dx12 => ("dx12", "DX12"), Gl => ("gl",
 
 impl Backend {
     /// Renderer-supported APIs shared by the Video choices and native candidate discovery.
-    pub const AVAILABLE: &'static [Self] = &[Self::Vulkan, Self::Dx12, Self::Gl, Self::Metal];
+    pub const AVAILABLE: &'static [Self] = &[Self::Vulkan, Self::Dx12, Self::Metal, Self::Gl];
 
     /// Parses a single backend, rejecting lists and unsupported spellings.
     pub fn parse(value: &str) -> Option<Self> {

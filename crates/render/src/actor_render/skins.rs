@@ -55,7 +55,7 @@ fn skin_array(
                 usage: TextureUsages::TEXTURE_BINDING
                     | TextureUsages::COPY_DST
                     | TextureUsages::COPY_SRC,
-                view_formats: raw_views.view_formats(),
+                view_formats: raw_views.view_formats(device),
             })
         },
     )

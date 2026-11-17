@@ -186,7 +186,8 @@ pub(crate) fn prepare_particle_resources(
     raw_views: Option<Res<crate::actor::gpu::ArtworkRawViews>>,
     mut shared_atlases: SharedAtlasRelease,
 ) {
-    let raw_views = crate::actor::gpu::ArtworkRawViews::current(raw_views);
+    let raw_views =
+        crate::actor::gpu::ArtworkRawViews::current(raw_views).for_device(&uploads.device);
     atlas::prepare(
         &frame,
         &uploads.device,

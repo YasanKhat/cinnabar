@@ -46,8 +46,8 @@ fn shared_colour_retains_samples_until_one_discarding_resolve() {
             eprintln!("missing fixture: shared scene {samples}x MSAA format support");
             continue;
         }
-        let scene = SceneTarget::new(&device, size(), format, samples).unwrap();
-        let resolved = SceneTarget::new(&device, size(), format, 1).unwrap();
+        let scene = SceneTarget::new(&device, size(), format, samples, true).unwrap();
+        let resolved = SceneTarget::new(&device, size(), format, 1, true).unwrap();
         let mut resolves = 0;
         for encoded in [false, true, false, true, false] {
             let attachment = scene.attachment(encoded, LoadOp::Load, None);
@@ -269,8 +269,8 @@ struct Hand { @location(0) colour: vec4f, @builtin(sample_mask) coverage: u32 }
                 .into(),
             ),
         });
-    let scene = SceneTarget::new(device, size(), format, samples).unwrap();
-    let resolved = SceneTarget::new(device, size(), format, 1).unwrap();
+    let scene = SceneTarget::new(device, size(), format, samples, true).unwrap();
+    let resolved = SceneTarget::new(device, size(), format, 1, true).unwrap();
     let opaque = pipeline(device, &shader, format, samples, "opaque", None);
     let transparent = pipeline(
         device,
@@ -716,4 +716,15 @@ fn retained_passes_refuse_fallback_colour_while_the_msaa_scene_is_unavailable() 
         attachment.view,
         target.get_color_attachment().view
     ));
+}
+
+#[test]
+fn single_format_scene_uses_the_base_format_for_both_material_spaces() {
+    let (device, _) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let device = RenderDevice::from(device);
+    let format = TextureFormat::Rgba8UnormSrgb;
+    let scene = SceneTarget::new(&device, size(), format, 1, false).unwrap();
+    assert_eq!(scene.texture.format(), format);
+    assert_eq!(scene.format(), format);
+    assert!(scene.matches(size(), format, 1));
 }

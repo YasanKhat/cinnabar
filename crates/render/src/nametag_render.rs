@@ -253,7 +253,10 @@ struct NametagPipelineSpecializer;
 
 #[derive(Resource)]
 struct NametagPipeline {
-    variants: Variants<RenderPipeline, NametagPipelineSpecializer>,
+    variants: Variants<
+        RenderPipeline,
+        crate::texture_compat::ViewFormatSpecializer<NametagPipelineSpecializer>,
+    >,
     bind_group_layout: BindGroupLayoutDescriptor,
 }
 
@@ -329,7 +332,13 @@ impl FromWorld for NametagPipeline {
             ..default()
         };
         Self {
-            variants: Variants::new(NametagPipelineSpecializer, descriptor),
+            variants: Variants::new(
+                crate::texture_compat::ViewFormatSpecializer::new(
+                    NametagPipelineSpecializer,
+                    _world,
+                ),
+                descriptor,
+            ),
             bind_group_layout,
         }
     }

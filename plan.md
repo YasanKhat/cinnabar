@@ -2105,7 +2105,10 @@ Flathub submission remain incomplete.
   OpenGL/GLES is exposed in Video settings and native startup candidates on Windows, Linux and
   Android, after the preferred modern APIs. Startup retains capability checks and crash recovery.
   End-to-end GL shader, surface and driver acceptance is incomplete; devices lacking required
-  storage buffers, view formats or other renderer capabilities remain unsupported. No 400 FPS
+  storage buffers or other mandatory renderer capabilities remain unsupported. Alternate views
+  now use a single-format fallback, absent sample shading disables MSAA before view preparation,
+  and GL always selects direct terrain draws and CPU culling. Native GL presentation and visual
+  acceptance, including dependency-owned non-sRGB-only surface configuration, remain incomplete. No 400 FPS
   performance claim is verified. Actor coverage partitioning uses reusable classification buffers
   and sorted membership keys instead of sorting instances with repeated linear lookups. Shadow
   containment and uniforms share cached planes; mesh construction uses fixed-size storage.

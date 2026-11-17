@@ -45,7 +45,7 @@ pub(super) fn start_page(
                 dimension: TextureDimension::D2,
                 format: TextureFormat::Rgba8UnormSrgb,
                 usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                view_formats: raw_views.view_formats(),
+                view_formats: raw_views.view_formats(device),
             },
         );
         if let Some(texture) = texture {

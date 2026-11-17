@@ -35,7 +35,7 @@ fn ready(source: Arc<EnhancedTextureAssets>) -> App {
     let queue = RenderQueue::new(queue);
     let assets =
         ChunkTextureAssets::with_enhanced(Arc::new(RuntimeAssets::diagnostic()), source, 0);
-    let (prepared, stats) = build_chunk_texture_assets(&assets, &device, &queue).unwrap();
+    let (prepared, stats) = build_chunk_texture_assets(&assets, &device, &queue, true).unwrap();
     let mut app = App::new();
     app.insert_resource(ChunkGpuArena::new(&device))
         .insert_resource(device)

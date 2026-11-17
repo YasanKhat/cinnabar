@@ -39,8 +39,12 @@ impl SceneTarget {
         size: Extent3d,
         format: TextureFormat,
         samples: u32,
+        alternate: bool,
     ) -> Option<Self> {
-        let encoded_format = format.remove_srgb_suffix();
+        let encoded_format = crate::texture_compat::encoded_format(
+            format,
+            alternate && crate::texture_compat::device_alternate_views(device),
+        );
         let view_formats = (format != encoded_format).then_some([format]);
         let bytes = u64::from(size.width)
             * u64::from(size.height)
@@ -103,6 +107,7 @@ impl SceneTarget {
     ) -> RenderPassColorAttachment<'a> {
         let mut load = target.get_unsampled_color_attachment().ops.load;
         if encoded
+            && self.texture.format() != self.format
             && self.format.is_srgb()
             && let LoadOp::Clear(colour) = load
         {
@@ -344,8 +349,19 @@ pub(crate) struct MultisampleFallback(bevy::platform::collections::HashMap<Entit
 /// Runs before specialization, so pipelines, depth and scene colour all see the same samples.
 fn apply_multisample_fallback(
     mut fallback: ResMut<MultisampleFallback>,
+    adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
     mut views: Query<(&ExtractedCamera, &mut Msaa)>,
 ) {
+    if adapter.as_ref().is_some_and(|adapter| {
+        !adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::MULTISAMPLED_SHADING)
+    }) {
+        for (_, mut msaa) in &mut views {
+            *msaa = Msaa::Off;
+        }
+    }
     fallback
         .0
         .retain(|entity, size| match views.get_mut(*entity) {
@@ -369,6 +385,7 @@ type SceneTargetView<'a> = (
 pub(crate) fn prepare_scene_targets(
     mut commands: Commands,
     device: Res<RenderDevice>,
+    adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
     mut fallback: ResMut<MultisampleFallback>,
     views: Query<SceneTargetView, With<Camera3d>>,
     removed: Query<Entity, (With<SceneTarget>, Without<ViewTarget>)>,
@@ -388,7 +405,15 @@ pub(crate) fn prepare_scene_targets(
         }
         let mut view = commands.entity(entity);
         match failed.attempt(entity, (size, format, samples), || {
-            SceneTarget::new(&device, size, format, samples)
+            let alternate = adapter.as_ref().map_or_else(
+                || crate::texture_compat::device_alternate_views(&device),
+                |adapter| {
+                    crate::texture_compat::alternate_views(
+                        adapter.get_downlevel_capabilities().flags,
+                    )
+                },
+            );
+            SceneTarget::new(&device, size, format, samples, alternate)
         }) {
             Some(scene) => {
                 view.insert(scene).remove::<SceneTargetUnavailable>();

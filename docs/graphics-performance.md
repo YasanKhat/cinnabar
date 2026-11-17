@@ -17,11 +17,23 @@ Disabling VSync may introduce tearing and increases power consumption.
 Menus, background windows, VRR policies and the compositor can impose other limits.
 
 GL still must satisfy the renderer's capability checks, including vertex and
-fragment storage buffers and texture view formats. Exposing the API does not
+fragment storage buffers. Alternate texture views and multisampled shading are
+optional: adapters without alternate views keep a single matching texture/view
+format and ordinary world pipelines use linear blending into the sRGB attachment.
+Adapters without multisampled shading use one sample before view/depth/pipeline
+preparation. GL always uses CPU culling and direct terrain draws. Exposing the API does not
 make older GPUs compatible. Saved Video choices use the existing automatic
 fallback and startup crash recovery; an explicit `WGPU_BACKEND` override is for
 diagnostics and does not promise automatic fallback. Remove it to restore Auto.
-GL end-to-end rendering and driver acceptance remain unverified.
+GL end-to-end rendering and driver acceptance remain unverified. In this pinned
+wgpu/Bevy version, downlevel flags are queried on `RenderAdapter`, not `RenderDevice`.
+The GLES backend is also rejected by standalone alternate-view upload guards.
+
+The renderer's own surface descriptors use empty `view_formats`. Native window
+surface configuration is owned by the pinned Bevy dependency, which selects an
+sRGB surface format when available (and then requests no alternate view). Its
+non-sRGB-only surface fallback is not validated here; do not interpret the native
+texture fallback as validation of every possible GL presentation surface.
 
 ## Measuring the 400 FPS target
 

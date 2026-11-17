@@ -92,7 +92,7 @@ fn reference_table_twice_the_frame_budget_completes_in_three_frames() {
     let queue = RenderQueue::new(queue);
     let base = ChunkTextureAssets::default();
     let (mut prepared, mut stats) =
-        crate::chunk::gpu::texture_upload::build_chunk_texture_assets(&base, &device, &queue)
+        crate::chunk::gpu::texture_upload::build_chunk_texture_assets(&base, &device, &queue, true)
             .unwrap();
     let old_references = prepared.enhanced_texture_refs.id();
     let old_views = prepared.enhanced_views.each_ref().map(|view| view.id());
